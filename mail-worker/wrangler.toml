@@ -6,19 +6,19 @@ keep_vars = true
 [observability]
 enabled = true
 
-# D1 / KV 声明并使用 ${} 环境变量占位符注入真实 ID：
-# 公开仓库不含真实资源 ID，仅留占位符；由 Cloudflare Builds 的环境变量
-# D1_DATABASE_ID / KV_NAMESPACE_ID 在部署时替换为真实 ID。
+# D1 / KV 不在 wrangler.toml 声明：由 Cloudflare Dashboard 在 Worker > Settings > Bindings
+# 手动绑定（绑定名 db / kv）。仅 [ai] 因无需资源 ID 固定声明、每次部署保留。
+# 说明：经实测，wrangler.toml 不支持对 database_id / KV id 做 ${} 环境变量插值
+# （GitHub 连接的 Import-a-repo 部署流也不会注入/回写 ID），因此 db/kv 遵循上游
+# cloud-mail 做法，交由 Dashboard 绑定。
 # 绑定名须与代码一致：env.db / env.kv / env.r2 / env.ai。
 
-[[d1_databases]]
-binding = "db"
-database_name = "xi-mail"
-database_id = "${D1_DATABASE_ID}"
+#[[d1_databases]]
+#binding = "db"
+#database_name = "xi-mail"
 
-[[kv_namespaces]]
-binding = "kv"
-id = "${KV_NAMESPACE_ID}"
+#[[kv_namespaces]]
+#binding = "kv"
 
 # Workers AI（验证码识别等功能，代码里 env.ai）。固定声明、无需资源 ID，每次部署保留。
 [ai]
