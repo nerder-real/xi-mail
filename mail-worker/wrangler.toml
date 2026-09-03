@@ -1,0 +1,41 @@
+name = "xi-mail"
+main = "src/index.js"
+compatibility_date = "2025-06-04"
+keep_vars = true
+
+[observability]
+enabled = true
+
+# D1 / KV 声明并使用 ${} 环境变量占位符注入真实 ID：
+# 公开仓库不含真实资源 ID，仅留占位符；由 Cloudflare Builds 的环境变量
+# D1_DATABASE_ID / KV_NAMESPACE_ID 在部署时替换为真实 ID。
+# 绑定名须与代码一致：env.db / env.kv / env.r2 / env.ai。
+
+[[d1_databases]]
+binding = "db"
+database_name = "xi-mail"
+database_id = "${D1_DATABASE_ID}"
+
+[[kv_namespaces]]
+binding = "kv"
+id = "${KV_NAMESPACE_ID}"
+
+# Workers AI（验证码识别等功能，代码里 env.ai）。固定声明、无需资源 ID，每次部署保留。
+[ai]
+binding = "ai"
+
+[assets]
+binding = "assets"
+directory = "./dist"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[triggers]
+crons = ["0 16 * * *"]
+
+[vars]
+orm_log = false
+
+# 使用与上游一致的 pnpm 构建前端
+[build]
+command = "pnpm --prefix ../mail-view install && pnpm --prefix ../mail-view run build"
