@@ -6,24 +6,12 @@ keep_vars = true
 [observability]
 enabled = true
 
-# 绑定声明（真实资源 ID 用 ${...} 占位符，不写死进公开仓库）：
-# 需在 Cloudflare Builds 的 环境变量 中配置（Settings → Builds 或 Worker 变量）：
-#   D1_DATABASE_ID   D1 数据库 ID（必需）
-#   KV_NAMESPACE_ID  KV 命名空间 ID（必需）
-# 也可在 Cloudflare Dashboard > Worker > Settings > Bindings 手动绑定同一资源。
-# 每次 deploy 都以本配置显式带上这些绑定，因此不会丢失。
-# r2 故意不声明（可选；附件自动回退到 KV 存储）。
+# D1/KV/R2 不在配置中声明：由 Cloudflare Dashboard 在 Worker > Settings > Bindings
+# 手动绑定（binding 名为 db / kv；r2 可选，附件回退 KV）。新版 wrangler v4 对配置
+# 中未声明的绑定会在部署时保留，不会覆盖/清空 Dashboard 已有绑定。
+# 绑定名须与代码一致：env.db / env.kv / env.r2 / env.ai。
 
-[[d1_databases]]
-binding = "db"
-database_name = "xi-mail"
-database_id = "${D1_DATABASE_ID}"
-
-[[kv_namespaces]]
-binding = "kv"
-id = "${KV_NAMESPACE_ID}"
-
-# Workers AI（验证码识别等功能，代码里 env.ai）。固定声明，每次部署保留。
+# Workers AI（验证码识别等功能，代码里 env.ai）。固定声明、无需资源 ID，每次部署保留。
 [ai]
 binding = "ai"
 
