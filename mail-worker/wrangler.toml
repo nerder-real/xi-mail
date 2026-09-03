@@ -15,6 +15,10 @@ enabled = true
 # Worker > Settings > Variables and Secrets
 #   - domain（JSON 数组）、admin、jwt_secret、orm_log
 
+# Workers AI（验证码识别等功能，代码里 env.ai）。绑定固定声明，每次部署都会保留。
+[ai]
+binding = "ai"
+
 [assets]
 binding = "assets"
 directory = "./dist"
