@@ -6,11 +6,17 @@ keep_vars = true
 [observability]
 enabled = true
 
-# D1/KV/R2 不在此声明（注释掉）：由 Cloudflare Dashboard 在 Worker > Settings >
-# Bindings 手动绑定（绑定名 db / kv；r2 可选，附件回退 KV）。与 cloud-mail 一致：
-# wrangler 部署只管理配置中声明的绑定，未声明的绑定不会被覆盖/清空，因此
-# Dashboard 手动绑定在每次部署后都能保留。
-# 绑定名须与代码一致：env.db / env.kv / env.r2 / env.ai。
+# D1/KV/R2 不声明（注释掉）：由 Cloudflare Dashboard 在 Worker > Settings > Bindings
+# 手动绑定（绑定名 db / kv）。与 cloud-mail 保持一致：当 wrangler（4.90.0）部署时，
+# 对于配置中未声明的绑定，旧版行为是保留远程现有绑定（不覆盖）。本测试用于验证
+# “wrangler 版本”假设。绑定名须与代码一致：env.db / env.kv / env.r2 / env.ai。
+
+#[[d1_databases]]
+#binding = "db"
+#database_name = "xi-mail"
+
+#[[kv_namespaces]]
+#binding = "kv"
 
 # Workers AI（验证码识别等功能，代码里 env.ai）。固定声明、无需资源 ID，每次部署保留。
 [ai]
