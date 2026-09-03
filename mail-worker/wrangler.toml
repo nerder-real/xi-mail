@@ -6,14 +6,26 @@ keep_vars = true
 [observability]
 enabled = true
 
-# 敏感信息一律不写入仓库：
-# D1/KV/R2 绑定与 domain/admin/jwt_secret 等变量请在 Cloudflare Dashboard 配置。
-# Worker > Settings > Bindings
-#   - D1 database  绑定名 db（固定，勿改）
-#   - KV namespace 绑定名 kv（固定，勿改）
-#   - R2 bucket    绑定名 r2（可选，不绑则附件回退到 KV）
-# Worker > Settings > Variables and Secrets
-#   - domain（JSON 数组）、admin、jwt_secret、orm_log
+# 绑定声明（真实资源 ID 用 ${...} 占位符，不写死进公开仓库）：
+# 需在 Cloudflare Builds 的 环境变量 中配置（Settings → Builds 或 Worker 变量）：
+#   D1_DATABASE_ID   D1 数据库 ID（必需）
+#   KV_NAMESPACE_ID  KV 命名空间 ID（必需）
+# 也可在 Cloudflare Dashboard > Worker > Settings > Bindings 手动绑定同一资源。
+# 每次 deploy 都以本配置显式带上这些绑定，因此不会丢失。
+# r2 故意不声明（可选；附件自动回退到 KV 存储）。
+
+[[d1_databases]]
+binding = "db"
+database_name = "xi-mail"
+database_id = "${D1_DATABASE_ID}"
+
+[[kv_namespaces]]
+binding = "kv"
+id = "${KV_NAMESPACE_ID}"
+
+# Workers AI（验证码识别等功能，代码里 env.ai）。固定声明，每次部署保留。
+[ai]
+binding = "ai"
 
 [assets]
 binding = "assets"
