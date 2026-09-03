@@ -15,6 +15,11 @@ enabled = true
 # Worker > Settings > Variables and Secrets
 #   - domain（JSON 数组）、admin、jwt_secret、orm_log
 
+# Workers AI（预留）：后续将用于验证码识别等功能（代码里 env.ai）。
+# 绑定名固定声明（无需资源 ID），每次部署都会保留，不覆盖 Dashboard 其它绑定。
+[ai]
+binding = "ai"
+
 [assets]
 binding = "assets"
 directory = "./dist"

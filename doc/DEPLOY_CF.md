@@ -1,74 +1,65 @@
-# ☁️ Cloudflare 一键部署
+# ☁️ Cloudflare 部署
 
-本仓库已内置 `mail-worker/wrangler.toml`，无需本地环境，直接在 Cloudflare 连接本仓库即可
-一键构建并部署前后端。
+通过 **Workers & Pages → Import a repository** 把本仓库连到 Cloudflare，push 上游更新即
+自动构建部署。**无需任何 GitHub Actions / Secrets**。
 
-## 1. 准备 Cloudflare 资源
+## 绑定为什么不会丢
 
-在 Cloudflare Dashboard 创建以下资源：
+仓库里的 `mail-worker/wrangler.toml` 采用「只声明必带的、不写死资源」策略：
 
-- **D1 数据库**（必需）
-- **KV Namespace**（必需）
-- **R2 Bucket**（可选，不创建则附件回退到 KV 存储）
+- **D1 `db` / KV `kv` / R2 `r2`**：**不写进配置**（注释掉）。Wrangler 未声明这些绑定，
+  因此每次部署**不会覆盖**你在 Cloudflare Dashboard 手动配置的绑定。
+- **Workers AI `ai`**：**固定声明** `[ai] binding = "ai"`（无需资源 ID），每次部署保留，
+  供后续验证码识别等功能使用（代码里 `env.ai`）。
+- **`keep_vars = true`**：保证 Dashboard 里配置的变量（`domain`/`admin`/`jwt_secret` 等）
+  不被部署覆盖。
 
-## 2. 连接 Cloudflare 并部署
+仓库文件里**没有任何真实资源 ID / 密钥**，公开仓库安全。
 
-1. Cloudflare → **Workers & Pages** → **Create application** → **Import a repository**，
-   选择本仓库。
-2. 关键配置：
-   - **Production branch**：`main`
-   - **Build command**：留空（由 `wrangler.toml` 的 `[build]` 负责前端构建）
-   - **Deploy command**：`npx wrangler deploy`
-   - **Root directory**：`/mail-worker`
-   - Worker 名称与 `wrangler.toml` 的 `name = "xi-mail"` 一致。
-3. 点 **Save and Deploy**。
+> 前提：所用的 Wrangler v4（仓库锁定 `^4.7.0`）已支持「远端配置感知」——部署时遇到
+> Dashboard 已配置、但配置文件中未声明的绑定，会**保留**而非清空。
 
-## 3. 配置绑定与变量
+## 一次性连接（首次）
 
-在 Worker 的 **Settings** 里配置（仓库本身不含任何 ID / 密钥）：
+1. Cloudflare → **Workers & Pages** → **Create application** → **Import a repository**。
+2. 选择本仓库（需授权 GitHub）。
+3. **Production branch**：`main`（或你实际部署的分支）。
+4. **Root directory**：`mail-worker`。
+5. Build command 留空（用 `wrangler.toml` 里的 `[build]` 即可）；
+   Deploy command 默认 `npx wrangler deploy`。
+6. **Save and Deploy**。
 
-### Bindings
+部署后，在 Worker → **Settings** 配置（仓库不含任何 ID / 密钥）：
 
-| 绑定 | 绑定名（固定） | 选择 |
-|---|---|---|
-| D1 database | `db` | 你的 D1 数据库 |
-| KV namespace | `kv` | 你的 KV Namespace |
-| R2 bucket | `r2` | 你的 R2 桶（可选） |
+- **Bindings**：
+  - D1 database　→ 绑定名 `db`
+  - KV namespace → 绑定名 `kv`
+  - R2 bucket（可选）→ 绑定名 `r2`
+  - Workers AI → 绑定名 `ai`（如需）
 
-### Variables and Secrets
+- **Variables and Secrets**（可选，取决于你的需求）：
+  - `domain`（JSON 数组，如 `["mail.example.com"]`）
+  - `admin`（管理员邮箱）
+  - `jwt_secret`（保持与初始化一致，勿随意改动）
+  - `orm_log`（可选）
 
-| 类型 | 名称 | 值 |
-|---|---|---|
-| Variable | `domain` | JSON 数组，如 `["mail.example.com"]` |
-| Variable | `admin` | 管理员邮箱，如 `admin@mail.example.com` |
-| Secret | `jwt_secret` | 较长随机串，勿含 `? % # / \` |
-| Variable | `orm_log` | `false` |
+> 绑定名必须与代码里 `env.db` / `env.kv` / `env.r2` / `env.ai` 一致。
 
-可选：LinuxDo OAuth 需 `linuxdo_switch/client_id/client_secret/callback_url`。
+## 后续更新
 
-## 4. 校验绑定生效
+之后每次 `git push`（触及 `mail-worker/**` 或 `mail-view/**`），Cloudflare 自动重新
+构建并部署。因为 `db`/`kv`/`r2` 未在配置里声明、`ai` 为固定声明，**D1/KV/R2/AI 绑定以及
+Dashboard 配置的变量都会原样保留，不会被清空。**
 
-部署日志中确认绑定列表包含 `db` / `kv`：
+## 初始化数据库
 
-```text
-Your Worker has access to the following bindings:
-env.assets               Assets
-env.orm_log (false)      Environment Variable
-env.db                   D1 Database
-env.kv                   KV Namespace
-```
-
-若只有 `assets`：Binding 未生效，补绑定后重新部署。
-
-## 5. 初始化数据库
-
-绑定生效后，访问（返回 `success` 即成功）：
+部署后访问（返回 `success` 即成功）：
 
 ```text
 https://你的worker域名/api/init/<jwt_secret>
 ```
 
-## 6. 配置收信域名（Email Routing）
+## 配置收信域名（Email Routing）
 
 1. Cloudflare → 邮箱域名 → **Email → Email Routing** → 开启。
 2. 添加 **MX** 与 **SPF（TXT）** 记录。
@@ -77,9 +68,10 @@ https://你的worker域名/api/init/<jwt_secret>
 
 > 仅用 `*.workers.dev` 测试时可不配 Email Routing，登录与站内信可用，外域收信需以上配置。
 
-## 7. 常见问题
+## 常见问题
 
-- **构建失败 / 前端报错**：查看构建日志；尽量不改 `package.json`，保持与上游一致。
-- **收不到外域邮件**：检查绑定是否生效（见第 4 步），以及 Email Routing 的 MX/SPF/路由。
-- **登录后 401 / authExpired**：确认 KV 绑定生效，`jwt_secret` 与初始化时一致。
+- **收不到外域邮件**：检查 `db`/`kv` 绑定是否生效，以及 Email Routing 的 MX/SPF/路由。
+- **登录后 401 / authExpired**：确认 KV 绑定生效，`jwt_secret` 与初始化时一致（勿改）。
 - **附件异常**：`r2` 未绑定正常回退到 KV；超大附件（>25MB）可补 R2。
+- **构建失败 / 前端报错**：`mail-view` 需 pnpm 构建，`mail-view/pnpm-workspace.yaml` 已
+  允许必要的 build scripts（esbuild 等）；尽量不改 `package.json`，保持与上游一致。

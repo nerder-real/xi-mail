@@ -64,14 +64,16 @@ x-admin-auth: <your-token>
 
 ## ☁️ Cloudflare 一键部署
 
-为避免本地环境部署复杂问题，本仓库已适配 Cloudflare 自动部署。
+为避免本地环境部署复杂问题，本仓库已适配 Cloudflare 自动部署（参考
+[maillab/cloud-mail](https://github.com/maillab/cloud-mail) 方案）。
 
-<a href="https://deploy.workers.cloudflare.com/?repository=https://github.com/PastKing/xi-mail" target="_blank" rel="noopener">
-  <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" />
-</a>
+**通过 Cloudflare 的 Import a repository 自动部署（无需 GitHub Actions / Secrets）。**
+`mail-worker/wrangler.toml` 采用「只声明必带、不写死资源」策略：D1 `db` / KV `kv` / R2 `r2`
+不在配置中声明，因此每次部署不会覆盖你在 Cloudflare 手动配置的绑定；Workers AI `ai`
+固定声明、`keep_vars=true`，绑定与变量都不会丢。真实 ID / 密钥一律不写入公开仓库。
 
-点击按钮，或前往 **Workers & Pages → Create application → Import a repository** 选择本仓库。
-绑定 D1/KV、设置变量后即可运行，详见 [CF 直连部署教程](doc/DEPLOY_CF.md)。
+前往 **Workers & Pages → Create application → Import a repository** 选择本仓库，
+Root directory 设为 `mail-worker` 即可。详见 [Cloudflare 部署教程](doc/DEPLOY_CF.md)。
 
 ---
 
