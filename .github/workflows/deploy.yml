@@ -1,0 +1,158 @@
+name: Deploy xi-mail
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 手动 Sync Fork 后自动部署到 Cloudflare。
+#
+# 触发：push 到 main（涉及 mail-worker/、mail-view/、本 workflow 或脚本）。
+# 上游更新时：在 GitHub 网页 Sync fork（merge/PR）即可，merge 结果 push 到
+# main 后本 workflow 自动部署。代码无变化时不触发（paths 过滤）。
+#
+# 为什么不会丢 db/kv 绑定：
+#   `wrangler deploy` 是声明式的：远端绑定被本地配置整体覆盖，配置里没声明的
+#   d1 / kv_namespace / r2_bucket 绑定必然被清空（keep_vars 只能保住 vars 与
+#   secrets，管不到资源绑定；无 --keep-bindings 开关）。
+#   因此部署前用 Secrets 现场生成 wrangler.ci.toml，把 db/kv(/r2) 显式写进配置。
+#
+# 业务变量（domain/admin）与 jwt_secret 不在本 workflow：
+#   在 Cloudflare Dashboard > Settings > Variables and Secrets 配置一次即可，
+#   keep_vars = true 会让每次部署自动保留它们（实测从未丢失）。
+#
+# 与 Cloudflare Workers Builds（Dashboard 直连仓库）的关系：
+#   该通道默认执行 `npx wrangler deploy` 且找不到含绑定的配置 → 会清空绑定。
+#   启用必须改 Deploy command 调用同一个生成脚本，见 doc/DEPLOY_CF.md B 章。
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mail-worker/**'
+      - 'mail-view/**'
+      - '.github/workflows/deploy.yml'
+      - '.github/scripts/**'
+  workflow_dispatch:
+    inputs:
+      skip_init:
+        description: '跳过部署后的 /api/init 数据库初始化（仅排障时勾选）'
+        type: boolean
+        default: false
+
+# 同一时间只跑一个，避免并发部署同一个 Worker
+concurrency:
+  group: deploy-xi-mail
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      WORKER_NAME: xi-mail
+      # ── Cloudflare 凭据（Secrets，2 个） ──
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # ── 资源 ID（Secrets，2 个） ──
+      D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      KV_NAMESPACE_ID: ${{ secrets.KV_NAMESPACE_ID }}
+      # ── 可选 ──
+      # 有自定义域名务必配置，否则每次部署会移除 Worker 的自定义域名路由
+      CUSTOM_DOMAIN: ${{ secrets.CUSTOM_DOMAIN }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      D1_DATABASE_NAME: ${{ secrets.D1_DATABASE_NAME }}
+      # INIT_URL = https://<worker域名>/api/init/<jwt_secret>，配了则部署后自动迁移数据库
+      INIT_URL: ${{ secrets.INIT_URL }}
+
+    steps:
+      # fetch-depth: 0 非必需（不再做上游 merge），浅克隆更快
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Node 与 pnpm 必须显式安装：
+      #   1. ubuntu-latest 只预装 npm/yarn，不含 pnpm；
+      #   2. mail-view/pnpm-workspace.yaml 的 allowBuilds 需要 pnpm 11+。
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      # ── 前置校验：缺 secret 直接失败，避免部署出没有绑定的半成品 Worker ──
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID D1_DATABASE_ID KV_NAMESPACE_ID; do
+            if [ -z "${!v:-}" ]; then
+              echo "::error::缺少 Secret：$v"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "✅ 必需 Secrets（4 个）校验通过"
+
+      # ── 主 Worker 的运行时依赖（hono / drizzle 等），由 wrangler 打包 ──
+      - name: Install mail-worker dependencies
+        working-directory: mail-worker
+        run: npm ci
+
+      # ── 前端构建：release 模式产物输出到 ../mail-worker/dist ──
+      - name: Build frontend (mail-view)
+        run: |
+          set -euo pipefail
+          pnpm -C mail-view install --frozen-lockfile
+          pnpm -C mail-view run build
+          test -f mail-worker/dist/index.html
+          echo "✅ 前端产物已生成到 mail-worker/dist"
+
+      # ── 关键步骤：现场生成带绑定的部署配置（不写入仓库、不回显资源 ID） ──
+      - name: Generate wrangler.ci.toml
+        working-directory: mail-worker
+        run: node ../.github/scripts/gen-wrangler-ci.mjs
+
+      - name: Deploy Worker
+        working-directory: mail-worker
+        run: npx wrangler deploy --config wrangler.ci.toml
+
+      # ── 校验绑定（不通过即失败，避免带着残缺绑定静默上线） ──
+      - name: Verify bindings
+        run: node .github/scripts/ensure-bindings.mjs
+
+      # ── 初始化 / 迁移数据库表结构（幂等）。未配置 INIT_URL 时跳过 ──
+      - name: Initialize database
+        if: ${{ secrets.INIT_URL != '' && (github.event_name != 'workflow_dispatch' || inputs.skip_init == false) }}
+        run: |
+          set -uo pipefail
+          for i in 1 2 3 4 5; do
+            body=$(curl -sS --max-time 30 "$INIT_URL" 2>/dev/null || true)
+            echo "第 $i 次尝试返回：$body"
+            if [ "$body" = "success" ]; then
+              echo "✅ 数据库初始化成功"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::/api/init 未返回 success —— 检查 INIT_URL 里的 jwt_secret 是否与 Worker 配置一致、db/kv 绑定是否生效"
+          exit 1
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### 部署结果"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 触发方式 | \`${GITHUB_EVENT_NAME}\` |"
+            echo "| Worker | \`${WORKER_NAME}\` |"
+            echo "| 部署的提交 | \`$(git log --oneline -1)\` |"
+            echo "| 状态 | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
