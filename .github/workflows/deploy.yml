@@ -128,9 +128,13 @@ jobs:
 
       # ── 初始化 / 迁移数据库表结构（幂等）。未配置 INIT_URL 时跳过 ──
       - name: Initialize database
-        if: ${{ secrets.INIT_URL != '' && (github.event_name != 'workflow_dispatch' || inputs.skip_init == false) }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_init == false }}
         run: |
           set -uo pipefail
+          if [ -z "$INIT_URL" ]; then
+            echo "INIT_URL 未配置，跳过数据库初始化（手动访问 https://<worker域名>/api/init/<jwt_secret> 一次即可）"
+            exit 0
+          fi
           for i in 1 2 3 4 5; do
             body=$(curl -sS --max-time 30 "$INIT_URL" 2>/dev/null || true)
             echo "第 $i 次尝试返回：$body"
