@@ -156,7 +156,7 @@ git push
 
 | Secret | 必填 | 说明 |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | ✅ 1/4 | 权限需含 **Workers Scripts: Edit**、**D1: Edit**、**KV: Edit** |
+| `CLOUDFLARE_API_TOKEN` | ✅ 1/4 | 最小权限见 A3.1（Workers Scripts + Workers Routes），**不需要 D1/KV 权限** |
 | `CLOUDFLARE_ACCOUNT_ID` | ✅ 2/4 | Cloudflare 账户 ID |
 | `D1_DATABASE_ID` | ✅ 3/4 | D1 数据库 ID（`Workers & Pages → D1 → 你的库 → 详情`） |
 | `KV_NAMESPACE_ID` | ✅ 4/4 | KV Namespace ID（`Workers & Pages → KV → 你的命名空间`） |
@@ -169,6 +169,52 @@ git push
 >
 > 缺任何一个必填项，`Validate required secrets` 这一步会**在部署前**直接失败并逐个列出缺哪个，
 > 不会部署出一个没有绑定的半成品 Worker。
+
+### A3.1 `CLOUDFLARE_API_TOKEN` 权限模板（照着勾即可）
+
+创建入口：https://dash.cloudflare.com/profile/api-tokens → **Create Token** → **Create Custom Token**。
+
+共添加 **3 条权限**（默认预置的那一行 `Account → Account Settings` 删掉或改掉即可）：
+
+| # | 类别 (Category) | 权限 (Permission) | 访问级别 (Access) | 为什么 |
+|---|---|---|---|---|
+| 1 | 账户 Account | Workers 脚本 Workers Scripts | 编辑 Edit | 部署脚本、上传资源、读写绑定 |
+| 2 | 区域 Zone | Workers 路由 Workers Routes | 编辑 Edit | 挂自定义域名路由（缺它 = `No access to the specified resource`）|
+| 3 | 区域 Zone | 区域 Zone | 读取 Read | wrangler 解析「自定义域名 → zone」用 |
+
+资源范围（下方两栏）：
+
+| 资源栏 | 建议 |
+|---|---|
+| 账户资源 | Include → **特定账户**（勾 `CLOUDFLARE_ACCOUNT_ID` 那个）；只有单一账户时「所有账户」等效，可接受 |
+| 区域资源 | Include → **特定区域** → 勾**自定义域名所在的 zone**（务必具体 zone，别选「所有区域」）|
+
+**第一条（Account 层）** —— 部署 Worker 本体必需：
+
+| 权限 | 资源范围 |
+|---|---|
+| Account → **Workers Scripts** → **Edit** | Include → **Specific account**（勾选你的账户） |
+
+> 部署脚本、上传资源、读写绑定（`ensure-bindings.mjs` 用同一权限）都走这里。
+
+**第二条（Zone 层）** —— 挂自定义域名路由必需（缺失时部署会在 `PUT /zones/{zone}/workers/routes` 报
+`No access to the specified resource`）：
+
+| 权限 | 资源范围 |
+|---|---|
+| Zone → **Workers Routes** → **Edit** | Include → **Specific zone** → 选择**自定义域名所在的 zone** |
+| Zone → **Zone** → **Read** | 同上（wrangler 需要它把自定义域名解析到 zone） |
+
+> 两条 Zone 权限的 `Include` 必须选「Specific zone」并勾同一个 zone；写「All zones」也能跑通，
+> 但不建议——会把这个账号下所有域的 route 权限都交给 CI。
+>
+> 若 CUSTOM_DOMAIN 的 zone 和 `CLOUDFLARE_ACCOUNT_ID` 不在同一账号，
+> 加任何权限都无效——需先把域名迁到同一账号。
+
+**不需要**：D1（部署时只写绑定引用，不对 D1 发请求）、KV、R2、Pages、Workers AI —— 加它们只会扩大风险面。
+D1/KV 的读写发生在 Worker 运行时，用的是 Worker 自身凭据，与此令牌无关。
+
+Token 值填进 GitHub Secrets 的 `CLOUDFLARE_API_TOKEN` 即可；令牌权限在保存**立即**生效，无需改动其他 Secret。
 
 **业务变量不进 Secrets**（`domain` / `admin` / `jwt_secret`）：它们在 Cloudflare Dashboard
 配置一次（见下表），`keep_vars = true` 让每次部署自动保留 vars 与 secrets——实测从未丢失。
@@ -236,6 +282,20 @@ wrangler.toml 也没有对应的配置键，CLI 也没有 `--keep-bindings` 开�
 - 仓库若开启分支保护规则，需允许 `github-actions[bot]` 直接推送 `main`。
 - GitHub 会在仓库 60 天无活动后暂停定时任务，长期不提交需留意。
 - `/api/init` 幂等，重复执行不会清空数据；排障时可在手动触发时勾选 `skip_init`。
+
+### 踩坑：`/zones/{zone}/workers/routes` 报 `No access to the specified resource`
+
+**症状**：`Deploy Worker` 步骤在 `Uploaded xi-mail` 之后失败，报
+`A request to the Cloudflare API (/zones/…/workers/routes) failed. No access to the specified resource.`
+此时 Worker 本体、资源、db/kv 绑定都已上传成功，只是自定义域名路由没挂上（域名可能仍走旧路由，但 workflow 红了）。
+
+**根因**：`[[routes]] custom_domain = true` 需要令牌对该 zone 有
+**Zone → Workers Routes → Edit** 权限，而旧令牌只配了 Account 层权限（或 zone 范围未覆盖）。
+
+**修复**：按 A3.1 重建令牌（补 Zone 层两条权限）→ GitHub Secret `CLOUDFLARE_API_TOKEN`
+替换新值 → Actions 里 **Re-run failed jobs** 即可，无需新提交（Secret 是运行时读取）。
+
+**注意**：若自定义域名所在 zone 与 `CLOUDFLARE_ACCOUNT_ID` 不是同一个账号，补权限也无效——先把域名迁到同一账号。
 
 ---
 
