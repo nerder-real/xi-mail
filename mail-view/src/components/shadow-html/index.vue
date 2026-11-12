@@ -1,124 +1,132 @@
 <template>
   <div class="content-box" ref="contentBox">
-    <div ref="container" class="content-html"></div>
+    <iframe ref="frame" class="content-html" title="Email content" scrolling="no"
+            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            referrerpolicy="no-referrer" :srcdoc="documentHtml" @load="onLoad" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { emailDocument } from '@/utils/email-html'
 
-const props = defineProps({
-  html: {
-    type: String,
-    required: true
-  }
-})
-
-const container = ref(null)
+const props = defineProps({ html: { type: String, required: true } })
+const frame = ref(null)
 const contentBox = ref(null)
-let shadowRoot = null
+const documentHtml = computed(() => emailDocument(props.html))
+let observer
+let contentObserver
+let mutationObserver
+let cleanupDocument
+let observedDocument
+let observedBody
+let animation
+let documentAnimation
+let disposed = false
 
-function updateContent() {
-  if (!shadowRoot) return;
-
-  // 1. 提取 <body> 的 style 属性（如果存在）
-  const bodyStyleRegex = /<body[^>]*style="([^"]*)"[^>]*>/i;
-  const bodyStyleMatch = props.html.match(bodyStyleRegex);
-  const bodyStyle = bodyStyleMatch ? bodyStyleMatch[1] : '';
-
-  // 2. 移除 <body> 标签（保留内容）
-  const cleanedHtml = props.html.replace(/<\/?body[^>]*>/gi, '');
-
-  // 3. 将 body 的 style 应用到 .shadow-content
-  shadowRoot.innerHTML = `
-    <style>
-      :host {
-        all: initial;
-        width: 100%;
-        height: 100%;
-        font-family: -apple-system, Inter, BlinkMacSystemFont,
-                    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-        font-size: 14px;
-        line-height: 1.5;
-        color: #13181D;
-        word-break: break-word;
-      }
-
-      h1, h2, h3, h4 {
-          font-size: 18px;
-          font-weight: 700;
-      }
-
-      p {
-        margin: 0;
-      }
-
-      a {
-        text-decoration: none;
-        color: #0E70DF;
-      }
-
-      .shadow-content {
-        background: #FFFFFF;
-        width: fit-content;
-        height: fit-content;
-        min-width: 100%;
-        ${bodyStyle ? bodyStyle : ''} /* 注入 body 的 style */
-      }
-
-      img:not(table img) {
-        max-width: 100%;
-        height: auto !important;
-      }
-
-    </style>
-    <div class="shadow-content">
-      ${cleanedHtml}
-    </div>
-  `;
+function scheduleFit() {
+  if (disposed) return
+  cancelAnimationFrame(animation)
+  animation = requestAnimationFrame(fit)
 }
 
-function autoScale() {
-  if (!shadowRoot || !contentBox.value) return
-
-  const parent = contentBox.value
-  const shadowContent = shadowRoot.querySelector('.shadow-content')
-
-  if (!shadowContent) return
-
-  const parentWidth = parent.offsetWidth
-  const childWidth = shadowContent.scrollWidth
-
-  if (childWidth === 0) return
-
-  const scale = parentWidth / childWidth
-
-  const hostElement = shadowRoot.host
-  hostElement.style.zoom = scale
+function observeDocument(doc) {
+  if (observedDocument === doc && observedBody === doc.body) return
+  cleanupDocument?.()
+  contentObserver?.disconnect()
+  mutationObserver?.disconnect()
+  observedDocument = doc
+  observedBody = doc.body
+  // Same-origin access is layout-only; the sandbox and CSP still forbid scripts.
+  // Start as soon as the body exists. iframe load waits for every remote image
+  // and font, even though the text can already be displayed and resized.
+  doc.addEventListener('load', scheduleFit, true)
+  doc.addEventListener('error', scheduleFit, true)
+  doc.fonts?.addEventListener('loadingdone', scheduleFit)
+  doc.fonts?.addEventListener('loadingerror', scheduleFit)
+  cleanupDocument = () => {
+    doc.removeEventListener('load', scheduleFit, true)
+    doc.removeEventListener('error', scheduleFit, true)
+    doc.fonts?.removeEventListener('loadingdone', scheduleFit)
+    doc.fonts?.removeEventListener('loadingerror', scheduleFit)
+  }
+  contentObserver = new ResizeObserver(scheduleFit)
+  contentObserver.observe(doc.body)
+  contentObserver.observe(doc.documentElement)
+  mutationObserver = new MutationObserver(scheduleFit)
+  mutationObserver.observe(doc.documentElement, { childList: true, subtree: true, characterData: true })
+  doc.fonts?.ready.then(() => { if (observedDocument === doc) scheduleFit() })
 }
 
+function fit() {
+  if (disposed) return
+  const element = frame.value
+  const doc = element?.contentDocument
+  if (!doc?.body || doc.URL !== 'about:srcdoc') return
+  observeDocument(doc)
+  if (!contentBox.value?.clientWidth) return
+  const width = contentBox.value.clientWidth
+  // The body box can be short even when floats/positioned newsletter content
+  // extends far below it. Collapse the viewport only during this synchronous
+  // measurement so scrollHeight reflects content rather than the previous
+  // iframe height (which otherwise grows on every fit and cannot shrink).
+  const box = contentBox.value
+  const previousHeight = box.style.height
+  // Hold the outer layout steady while measuring the smaller iframe viewport;
+  // otherwise a forced layout clamps a reader's scroll position back to zero.
+  box.style.height = Math.ceil(box.getBoundingClientRect().height) + 'px'
+  try {
+    element.style.height = '1px'
+    doc.body.style.zoom = 1
+    const naturalWidth = Math.max(doc.documentElement.scrollWidth, doc.body.scrollWidth)
+    const zoom = Math.min(1, width / Math.max(1, naturalWidth))
+    doc.body.style.zoom = zoom
+    const extent = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight * zoom, doc.body.getBoundingClientRect().bottom)
+    const height = Math.min(100000, Math.max(32, Math.ceil(extent) + 16))
+    element.style.height = height + 'px'
+  } finally {
+    box.style.height = previousHeight
+  }
+}
+
+function onLoad() {
+  fit()
+}
+
+function watchDocument() {
+  cancelAnimationFrame(documentAnimation)
+  const previous = observedDocument
+  let attempts = 0
+  const probe = () => {
+    if (disposed) return
+    const doc = frame.value?.contentDocument
+    fit()
+    if (doc?.URL === 'about:srcdoc' && doc.body && doc !== previous) return
+    // srcdoc navigation replaces the Document asynchronously, without resizing
+    // the outer element. Catch that replacement independently of iframe load.
+    if (++attempts < 60) documentAnimation = requestAnimationFrame(probe)
+  }
+  probe()
+}
+
+watch(documentHtml, watchDocument, { flush: 'post' })
 onMounted(() => {
-  shadowRoot = container.value.attachShadow({ mode: 'open' })
-  updateContent()
-  autoScale()
+  observer = new ResizeObserver(scheduleFit)
+  observer.observe(contentBox.value)
+  watchDocument()
 })
-
-watch(() => props.html, () => {
-  updateContent()
-  autoScale()
+onBeforeUnmount(() => {
+  disposed = true
+  observer?.disconnect()
+  contentObserver?.disconnect()
+  mutationObserver?.disconnect()
+  cleanupDocument?.()
+  cancelAnimationFrame(animation)
+  cancelAnimationFrame(documentAnimation)
 })
 </script>
 
 <style scoped>
-.content-box {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  font-family: -apple-system, Inter, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-}
-
-.content-html {
-  width: 100%;
-  height: 100%;
-}
+.content-box { width: 100%; overflow: hidden; }
+.content-html { display: block; width: 100%; height: 32px; border: 0; background: #fff; }
 </style>

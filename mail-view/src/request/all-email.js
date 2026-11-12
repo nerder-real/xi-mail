@@ -1,7 +1,11 @@
 import http from '@/axios/index.js';
 
 export function allEmailList(params) {
-    return http.get('/allEmail/list', {params: {...params}})
+    return http.get('/allEmail/list', {params: {...params, skipStats: params.emailId ? '1' : undefined}})
+}
+
+export function allEmailSenderStatistics(params) {
+    return http.get('/allEmail/senderStatistics', {params, noMsg:true, timeout:35000})
 }
 
 export function allEmailDelete(emailIds) {
@@ -12,6 +16,6 @@ export function allEmailBatchDelete(params) {
     return http.delete('/allEmail/batchDelete', {params: params} )
 }
 
-export function allEmailLatest(emailId) {
-    return http.get('/allEmail/latest', {params: {emailId}, noMsg: true, timeout: 35 * 1000})
+export function allEmailLatest(emailId, filters = {}) {
+    return http.get('/allEmail/latest', {params: {...filters, emailId}, noMsg: true, timeout: 35 * 1000})
 }

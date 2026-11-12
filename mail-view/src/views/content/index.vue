@@ -1,14 +1,27 @@
 <template>
   <div class="box">
     <div class="header-actions">
-      <Icon class="icon" icon="mingcute:left-line" width="18" height="18" @click="handleBack"/>
-      <Icon v-perm="'email:delete'" class="icon" icon="mingcute:delete-2-line" width="18" height="18" @click="handleDelete"/>
-      <span class="star" v-if="emailStore.contentData.showStar">
-        <Icon class="icon" @click="changeStar" v-if="email.isStar" icon="fluent-color:star-16" width="20" height="20"/>
-        <Icon class="icon" @click="changeStar" v-else icon="mingcute:star-line" width="18" height="18"/>
-      </span>
-      <Icon class="icon" v-if="emailStore.contentData.showReply" v-perm="'email:send'"  @click="openReply" icon="mingcute:back-2-line" width="18" height="18" />
-      <Icon class="icon" v-if="emailStore.contentData.showReply" v-perm="'email:send'"  @click="openForward" icon="mingcute:share-forward-line" width="18" height="18" />
+      <el-tooltip :content="$t('messageBack')" :trigger-keys="[]">
+        <button type="button" class="xi-icon-button" :aria-label="$t('messageBack')" @click="handleBack"><Icon icon="mingcute:left-line" width="18" height="18"/></button>
+      </el-tooltip>
+      <el-tooltip v-if="hasPerm('email:delete')" :content="$t('delete')" :trigger-keys="[]">
+        <button type="button" class="xi-icon-button" :aria-label="$t('delete')" @click="handleDelete"><Icon icon="mingcute:delete-2-line" width="18" height="18"/></button>
+      </el-tooltip>
+      <el-tooltip v-if="emailStore.contentData.showStar" :content="$t(email.isStar ? 'messageRemoveStar' : 'messageAddStar')" :trigger-keys="[]">
+        <button type="button" class="xi-icon-button" :aria-label="$t(email.isStar ? 'messageRemoveStar' : 'messageAddStar')" :aria-pressed="!!email.isStar" @click="changeStar">
+          <Icon v-if="email.isStar" icon="fluent-color:star-16" width="18" height="18"/>
+          <Icon v-else icon="mingcute:star-line" width="18" height="18"/>
+        </button>
+      </el-tooltip>
+      <el-tooltip v-if="emailStore.contentData.showReply && hasPerm('email:send')" :content="$t('reply')" :trigger-keys="[]">
+        <button type="button" class="xi-icon-button" :aria-label="$t('reply')" @click="openReply"><Icon icon="mingcute:back-2-line" width="18" height="18"/></button>
+      </el-tooltip>
+      <el-tooltip v-if="emailStore.contentData.showReply && hasPerm('email:send')" :content="$t('forward')" :trigger-keys="[]">
+        <button type="button" class="xi-icon-button" :aria-label="$t('forward')" @click="openForward"><Icon icon="mingcute:share-forward-line" width="18" height="18"/></button>
+      </el-tooltip>
+      <el-tooltip v-if="settingStore.settings.translation?.mailTranslation!==false" :content="$t('mailTranslation')" :trigger-keys="[]">
+        <button type="button" class="xi-icon-button" :aria-label="$t('mailTranslation')" :aria-expanded="showTranslation" @click="showTranslation=!showTranslation"><Icon icon="mingcute:translate-2-line" width="18" height="18"/></button>
+      </el-tooltip>
     </div>
     <div></div>
     <el-scrollbar class="scrollbar">
@@ -17,7 +30,7 @@
           {{ email.subject }}
         </div>
         <div class="content">
-          <div class="email-info">
+          <div class="email-info" :class="{'is-translating':showTranslation}">
             <div>
               <div class="send"><span class="send-source">{{$t('from')}}</span>
                 <div class="send-name">
@@ -29,19 +42,21 @@
               <div class="date">
                 <div>{{ formatDetailDate(email.createTime) }}</div>
               </div>
-              <div class="code-row" v-if="email.code" @click="copyEmailCode(email.code)">
+              <button type="button" class="code-row" v-if="email.code" :title="$t('copy')" :aria-label="$t('copy') + ' ' + email.code" @click="copyEmailCode(email.code)">
                 <Icon icon="mingcute:copy-2-line" width="14" height="14"/>
                 <span>{{ email.code }}</span>
-              </div>
+              </button>
             </div>
             <el-alert v-if="email.status === 3" :closable="false" :title="toMessage(email.message)" class="email-msg" type="error" show-icon />
             <el-alert v-if="email.status === 4" :closable="false" :title="$t('complained')" class="email-msg" type="warning" show-icon />
             <el-alert v-if="email.status === 5" :closable="false" :title="$t('delayed')" class="email-msg" type="warning" show-icon />
           </div>
           <el-scrollbar class="htm-scrollbar" :class="email.attList.length === 0 ? 'bottom-distance' : ''">
-            <el-skeleton v-if="contentLoading" class="content-skeleton" :rows="6" animated />
-            <ShadowHtml class="shadow-html" :html="formatImage(email.content)" v-else-if="email.content" />
-            <pre v-else class="email-text" >{{email.text}}</pre>
+            <MailTranslation :open="showTranslation" :email-id="email.emailId" :format-html="formatImage" @close="showTranslation=false">
+              <el-skeleton v-if="contentLoading" class="content-skeleton" :rows="6" animated />
+              <ShadowHtml class="shadow-html" :html="formatImage(email.content)" v-else-if="email.content" />
+              <pre v-else class="email-text">{{email.text}}</pre>
+            </MailTranslation>
           </el-scrollbar>
           <div class="att" v-if="email.attList.length > 0">
             <div class="att-title">
@@ -59,10 +74,12 @@
                 </div>
                 <div class="att-size">{{ formatBytes(att.size) }}</div>
                 <div class="opt-icon att-icon">
-                  <Icon v-if="isImage(att.filename)" icon="mingcute:eye-2-line" width="20" height="20" @click="showImage(att.key)"/>
-                  <a :href="cvtR2Url(att.key)" download>
-                    <Icon icon="mingcute:download-2-line" width="20" height="20"/>
-                  </a>
+                  <el-tooltip v-if="isImage(att.filename)" :content="$t('preview')" :trigger-keys="[]">
+                    <button type="button" class="xi-icon-button" :aria-label="$t('preview')" @click="showImage(att.key)"><Icon icon="mingcute:eye-2-line" width="18" height="18"/></button>
+                  </el-tooltip>
+                  <el-tooltip :content="$t('downloadAttachment')" :trigger-keys="[]">
+                    <a class="xi-icon-button" :aria-label="$t('downloadAttachment')" :href="cvtR2Url(att.key)" download><Icon icon="mingcute:download-2-line" width="18" height="18"/></a>
+                  </el-tooltip>
                 </div>
               </div>
             </div>
@@ -97,6 +114,8 @@ import {allEmailDelete} from "@/request/all-email.js";
 import {useUiStore} from "@/store/ui.js";
 import {useI18n} from "vue-i18n";
 import {EmailUnreadEnum} from "@/enums/email-enum.js";
+import {hasPerm} from '@/perm/perm.js';
+import MailTranslation from '@/components/MailTranslation.vue';
 
 const uiStore = useUiStore();
 const settingStore = useSettingStore();
@@ -107,6 +126,7 @@ const email = emailStore.contentData.email
 const showPreview = ref(false)
 const srcList = reactive([])
 const contentLoading = ref(false)
+const showTranslation = ref(false)
 
 const { t } = useI18n()
 watch(() => accountStore.currentAccountId, () => {
@@ -234,11 +254,15 @@ const handleDelete = () => {
     }
 
     router.back()
+  }).catch(error => {
+    if (error !== 'cancel' && error !== 'close') console.error(error)
   })
 }
 </script>
 <style scoped lang="scss">
 .box {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
@@ -247,23 +271,16 @@ const handleDelete = () => {
   padding: 10px 16px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--el-border-color-lighter);
   font-size: 18px;
-  .star {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 21px;
-  }
-  .icon {
-    cursor: pointer;
-  }
 }
 
 
 .scrollbar {
-  height: calc(100% - 38px);
+  flex: 1;
+  min-height: 0;
   width: 100%;
 }
 
@@ -372,6 +389,9 @@ const handleDelete = () => {
       @media (max-width: 1024px) {
         margin-bottom: 15px;
       }
+      &.is-translating {
+        margin-bottom: 0;
+      }
       .date {
         color: var(--regular-text-color);
         margin-bottom: 6px;
@@ -448,6 +468,7 @@ const handleDelete = () => {
 }
 
 .code-row {
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   gap: 5px;

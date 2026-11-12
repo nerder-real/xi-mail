@@ -22,61 +22,67 @@
             </el-button>
           </div>
 
+          <el-input v-model="domainSearch" clearable :placeholder="$t('domainSearchPlaceholder')" :aria-label="$t('domainSearchPlaceholder')">
+            <template #prefix><Icon icon="mingcute:search-line" width="16" height="16" /></template>
+          </el-input>
+
           <div class="domain-stat">
             <span class="domain-order-hint">
               <Icon icon="mingcute:dot-grid-line" width="14" height="14"/>
               {{ $t('domainOrderHint') }}
             </span>
-            <span class="domain-count">{{ $t('domainEnabledCount', { enabled: enabledDomainCount, total: managedDomainsData.length }) }}</span>
+            <span class="domain-count">{{ $t('domainEnabledCount', { enabled: enabledDomainCount, total: managedDomainsData.length }) }}<template v-if="domainSearch.trim()"> · {{ $t('domainMatchedCount', { count: visibleDomains.length }) }}</template></span>
           </div>
 
           <div v-if="managedDomainsData.length === 0" class="domain-empty">{{ $t('noDomains') }}</div>
-          <div v-else class="domain-list">
+          <div v-else-if="visibleDomains.length === 0" class="domain-empty">{{ $t('domainNoMatches') }}</div>
+          <div v-else ref="domainListEl" class="domain-list">
             <div
-              v-for="(item, idx) in managedDomainsData"
+              v-for="{ item, index: idx } in visibleDomains"
               :key="item.domain"
+              :data-domain-index="idx"
               class="domain-row"
               :class="{
                 'is-dragging': dragIndex === idx,
                 'is-drop-target': dragOverIndex === idx && dragIndex !== idx,
                 'is-off': !item.enabled
               }"
-              draggable="true"
-              @dragstart="onDragStart(idx)"
               @dragover.prevent="dragOverIndex = idx"
               @drop.prevent="onDrop(idx)"
-              @dragend="onDragEnd"
             >
-              <el-tooltip :content="$t('dragToSort')" placement="top" :show-after="300">
-                <span class="drag-handle">
+                <span class="drag-handle" :title="$t('dragToSort')" draggable="true" @dragstart.stop="onDragStart(idx, $event)" @dragend="onDragEnd">
                   <Icon icon="mingcute:dot-grid-line" width="16" height="16"/>
                 </span>
-              </el-tooltip>
               <span class="domain-index">{{ idx + 1 }}</span>
-              <span class="domain-name">{{ item.domain }}</span>
+              <span class="domain-name" :title="item.domain">{{ item.domain }}</span>
               <div class="domain-actions">
-                <el-tooltip :content="$t('moveUp')" placement="top" :show-after="300">
-                  <el-button size="small" text :disabled="idx === 0" @click="moveDomain(idx, -1)">
+                  <button type="button" class="domain-icon-button domain-step" :title="$t('moveUp')" :aria-label="$t('moveUp')" :disabled="idx === 0" @click="moveDomain(idx, -1)">
                     <Icon icon="mingcute:up-line" width="16" height="16"/>
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip :content="$t('moveDown')" placement="top" :show-after="300">
-                  <el-button size="small" text :disabled="idx === managedDomainsData.length - 1" @click="moveDomain(idx, 1)">
+                  </button>
+                  <button type="button" class="domain-icon-button domain-step" :title="$t('moveDown')" :aria-label="$t('moveDown')" :disabled="idx === managedDomainsData.length - 1" @click="moveDomain(idx, 1)">
                     <Icon icon="mingcute:down-line" width="16" height="16"/>
-                  </el-button>
-                </el-tooltip>
+                  </button>
                 <el-switch
                   v-model="item.enabled"
                   :active-value="true"
                   :inactive-value="false"
-                  size="small"
+                  :aria-label="item.domain"
                 />
-                <el-button size="small" type="danger" text @click="managedDomainsData.splice(idx, 1)">
-                  <Icon icon="mingcute:delete-2-line" width="16" height="16"/>
-                </el-button>
+                <button type="button" class="domain-icon-button" :aria-label="$t('domainActionsFor', { domain: item.domain })" aria-haspopup="menu" :aria-expanded="domainMenuVisible && menuDomain === item.domain" @click="openDomainMenu(item.domain, $event)" @keydown.down.prevent="openDomainMenu(item.domain, $event)"><Icon icon="mingcute:more-2-line" width="18" height="18" /></button>
               </div>
             </div>
           </div>
+
+          <el-dropdown ref="domainMenu" :virtual-ref="domainMenuAnchor" virtual-triggering :trigger="[]" :persistent="false" popper-class="sys-setting-popper" @visible-change="domainMenuVisible = $event" @command="command => handleDomainAction(menuDomain, command)">
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="first" :disabled="menuDomainIndex <= 0">{{ $t('domainMoveFirst') }}</el-dropdown-item>
+                <el-dropdown-item command="last" :disabled="menuDomainIndex === managedDomainsData.length - 1">{{ $t('domainMoveLast') }}</el-dropdown-item>
+                <el-dropdown-item command="position">{{ $t('domainMoveToPosition') }}</el-dropdown-item>
+                <el-dropdown-item command="delete" divided>{{ $t('delete') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
 
           <div class="domain-save-row">
             <el-button @click="resetManagedDomains">{{ $t('reset') }}</el-button>
@@ -86,45 +92,42 @@
       </div>
     </div>
 
+    <el-dialog v-model="moveDomainShow" :title="$t('domainMoveToPosition')" class="sys-setting-dialog domain-move-dialog" width="360">
+      <p class="domain-move-name">{{ movingDomain }}</p>
+      <label class="domain-position-field">
+        <span>{{ $t('domainTargetPosition') }}</span>
+        <el-input-number v-model="targetPosition" :min="1" :max="managedDomainsData.length" :precision="0" controls-position="right" :aria-label="$t('domainTargetPosition')" @keyup.enter="confirmDomainMove" />
+      </label>
+      <p class="domain-position-hint">{{ $t('domainPositionHint', { total: managedDomainsData.length }) }}</p>
+      <template #footer>
+        <el-button @click="moveDomainShow = false">{{ $t('cancel') }}</el-button>
+        <el-button type="primary" :disabled="!Number.isInteger(targetPosition)" @click="confirmDomainMove">{{ $t('confirm') }}</el-button>
+      </template>
+    </el-dialog>
+
     <div class="settings-card">
       <div class="card-title">{{ $t('domainMapping') }}</div>
       <div class="card-content">
-        <div class="setting-item">
-          <div>
-            <span>{{ $t('domainMapping') }}</span>
-            <el-tooltip effect="dark" :content="$t('domainMappingDesc')">
-              <Icon class="warning" icon="mingcute:information-line" width="18" height="18"/>
-            </el-tooltip>
-          </div>
-          <div class="forward">
-            <span class="domain-count">{{ Object.keys(domainMappingData).length }}</span>
-            <el-button class="opt-button" size="small" type="primary" @click="domainMappingShow = true">
-              <Icon icon="mingcute:settings-3-line" width="18" height="18"/>
-            </el-button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <el-dialog v-model="domainMappingShow" :title="$t('domainMapping')" class="sys-setting-dialog mapping-dialog">
+        <div class="settings-inline-field">
+      <p>{{ $t('domainMappingDesc') }}</p>
       <div class="mapping-list">
+        <div class="mapping-columns" aria-hidden="true"><span>{{ $t('sourceDomain') }}</span><span>{{ $t('displayDomain') }}</span></div>
         <div v-for="(val, key) in domainMappingData" :key="key" class="mapping-row">
-          <el-tag size="small" type="info" class="mapping-source">{{ key }}</el-tag>
-          <Icon icon="mingcute:arrow-right-line" width="14" height="14" style="flex-shrink: 0; color: var(--el-text-color-secondary);" />
-          <el-input size="small" v-model="domainMappingData[key]" :placeholder="$t('displayDomain')" style="flex: 1;" />
-          <el-button size="small" type="danger" link @click="delete domainMappingData[key]">
+          <span class="mapping-source" :title="key">{{ key }}</span>
+          <Icon class="mapping-arrow" icon="mingcute:arrow-right-line" width="16" height="16" />
+          <el-input v-model="domainMappingData[key]" :aria-label="$t('displayDomain') + ' ' + key" :placeholder="$t('displayDomain')" />
+          <el-button type="danger" link :aria-label="$t('delete') + ' ' + key" @click="delete domainMappingData[key]">
             <Icon icon="mingcute:delete-2-line" width="16" height="16"/>
           </el-button>
         </div>
-        <div class="mapping-row">
-          <el-select
-              size="small"
+        <div class="mapping-row mapping-row--new">
+          <el-select popper-class="sys-setting-popper"
               v-model="newMappingSource"
               filterable
               allow-create
               default-first-option
+              :aria-label="$t('sourceDomain')"
               :placeholder="$t('sourceDomain')"
-              style="flex: 1;"
           >
             <el-option
                 v-for="d in systemDomains"
@@ -134,20 +137,22 @@
                 :disabled="!!domainMappingData[d]"
             />
           </el-select>
-          <Icon icon="mingcute:arrow-right-line" width="14" height="14" style="flex-shrink: 0; color: var(--el-text-color-secondary);" />
-          <el-input size="small" v-model="newMappingDisplay" :placeholder="$t('displayDomain')" style="flex: 1;" />
-          <el-button size="small" type="primary" link @click="addDomainMapping">
+          <Icon class="mapping-arrow" icon="mingcute:arrow-right-line" width="16" height="16" />
+          <el-input v-model="newMappingDisplay" :aria-label="$t('displayDomain')" :placeholder="$t('displayDomain')" />
+          <el-button type="primary" link :aria-label="$t('add')" @click="addDomainMapping">
             <Icon icon="mingcute:add-line" width="16" height="16"/>
           </el-button>
         </div>
-        <el-button type="primary" style="width: 100%;" :loading="settingLoading" @click="saveDomainMapping">{{ $t('save') }}</el-button>
+        <div class="settings-inline-actions"><el-button @click="resetDomainMapping">{{ $t('settingsInlineReset') }}</el-button><el-button type="primary" :loading="settingLoading" @click="saveDomainMapping">{{ $t('settingsInlineSave') }}</el-button></div>
       </div>
-    </el-dialog>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import {computed, defineOptions, reactive, ref} from "vue";
+import {computed, defineOptions, nextTick, reactive, ref, shallowRef, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import {useI18n} from "vue-i18n";
 import {useSysSetting} from "../use-sys-setting.js";
@@ -157,15 +162,35 @@ defineOptions({
 })
 
 const {t} = useI18n()
-const {setting, settingStore, settingLoading, editSetting, onSettingsLoaded} = useSysSetting()
+const {setting, settingStore, settingLoading, editSetting, onSettingsLoaded, onSettingsDirty} = useSysSetting()
 
 const managedDomainsData = ref([])
 const newDomainInput = ref('')
+const domainSearch = ref('')
+const domainListEl = ref(null)
+const moveDomainShow = ref(false)
+const movingDomain = ref('')
+const targetPosition = ref(1)
+const domainMenu = ref(null), domainMenuAnchor = shallowRef(null)
+const menuDomain = ref(''), domainMenuVisible = ref(false)
+const menuDomainIndex = computed(() => managedDomainsData.value.findIndex(item => item.domain === menuDomain.value))
+async function openDomainMenu(domain, event) {
+  if (domainMenuVisible.value && menuDomain.value === domain) { domainMenu.value?.handleClose();return }
+  menuDomain.value = domain
+  domainMenuAnchor.value = event.currentTarget
+  await nextTick()
+  domainMenu.value?.handleOpen()
+}
+watch(domainSearch, () => domainMenu.value?.handleClose())
+const visibleDomains = computed(() => {
+  const query = domainSearch.value.trim().replace(/^@/, '').toLowerCase()
+  return managedDomainsData.value.map((item, index) => ({ item, index })).filter(({ item }) => item.domain.toLowerCase().includes(query))
+})
 const dragIndex = ref(null)
 const dragOverIndex = ref(null)
 
-const domainMappingShow = ref(false)
 const domainMappingData = reactive({})
+let domainsBaseline, mappingBaseline
 const newMappingSource = ref('')
 const newMappingDisplay = ref('')
 
@@ -179,6 +204,8 @@ const systemDomains = computed(() =>
 
 function resetManagedDomains() {
   newDomainInput.value = ''
+  domainSearch.value = ''
+  moveDomainShow.value = false
   const stored = setting.value.managedDomains
   if (stored && stored.length > 0) {
     managedDomainsData.value = stored.map(d => typeof d === 'string' ? {domain: d, enabled: true} : {...d})
@@ -188,13 +215,21 @@ function resetManagedDomains() {
       enabled: true
     }))
   }
+  domainsBaseline = JSON.stringify(managedDomainsData.value)
 }
 
-onSettingsLoaded(() => {
-  resetManagedDomains()
+function resetDomainMapping() {
   Object.keys(domainMappingData).forEach(key => delete domainMappingData[key])
   Object.assign(domainMappingData, setting.value.domainMapping || {})
+  newMappingSource.value = ''
+  newMappingDisplay.value = ''
+  mappingBaseline = JSON.stringify(domainMappingData)
+}
+onSettingsLoaded(() => {
+  if (domainsBaseline === undefined || (JSON.stringify(managedDomainsData.value) === domainsBaseline && !newDomainInput.value.trim())) resetManagedDomains()
+  if (mappingBaseline === undefined || (JSON.stringify(domainMappingData) === mappingBaseline && !newMappingSource.value && !newMappingDisplay.value)) resetDomainMapping()
 })
+onSettingsDirty(() => (domainsBaseline !== undefined && JSON.stringify(managedDomainsData.value) !== domainsBaseline) || (mappingBaseline !== undefined && JSON.stringify(domainMappingData) !== mappingBaseline) || !!(newDomainInput.value.trim() || newMappingSource.value || newMappingDisplay.value), () => { resetManagedDomains();resetDomainMapping() })
 
 function addDomain() {
   const d = newDomainInput.value.trim().replace(/^@/, '').toLowerCase()
@@ -208,22 +243,54 @@ function addDomain() {
 }
 
 function moveDomain(idx, offset) {
-  const target = idx + offset
-  const list = managedDomainsData.value
-  if (target < 0 || target >= list.length) return
-  ;[list[idx], list[target]] = [list[target], list[idx]]
+  moveDomainTo(idx, idx + offset)
 }
 
-function onDragStart(idx) {
+function moveDomainTo(from, target) {
+  const list = managedDomainsData.value
+  if (!Number.isInteger(from) || !Number.isInteger(target) || from < 0 || from >= list.length || target < 0 || target >= list.length || from === target) return
+  const [moved] = list.splice(from, 1)
+  list.splice(target, 0, moved)
+  nextTick(() => {
+    const container = domainListEl.value
+    const row = container?.querySelector(`[data-domain-index="${target}"]`)
+    if (!row) return
+    if (row.offsetTop < container.scrollTop) container.scrollTop = row.offsetTop
+    else if (row.offsetTop + row.offsetHeight > container.scrollTop + container.clientHeight) {
+      container.scrollTop = row.offsetTop + row.offsetHeight - container.clientHeight
+    }
+  })
+}
+
+function handleDomainAction(domain, command) {
+  const from = managedDomainsData.value.findIndex(item => item.domain === domain)
+  if (from < 0) return
+  if (command === 'first') moveDomainTo(from, 0)
+  else if (command === 'last') moveDomainTo(from, managedDomainsData.value.length - 1)
+  else if (command === 'delete') managedDomainsData.value.splice(from, 1)
+  else if (command === 'position') {
+    movingDomain.value = domain
+    targetPosition.value = from + 1
+    moveDomainShow.value = true
+  }
+}
+
+function confirmDomainMove() {
+  if (!Number.isInteger(targetPosition.value) || targetPosition.value < 1 || targetPosition.value > managedDomainsData.value.length) return
+  moveDomainTo(managedDomainsData.value.findIndex(item => item.domain === movingDomain.value), targetPosition.value - 1)
+  moveDomainShow.value = false
+}
+
+function onDragStart(idx, event) {
   dragIndex.value = idx
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', managedDomainsData.value[idx].domain)
 }
 
 function onDrop(idx) {
   const from = dragIndex.value
   if (from === null || from === idx) return
-  const list = managedDomainsData.value
-  const [moved] = list.splice(from, 1)
-  list.splice(idx, 0, moved)
+  moveDomainTo(from, idx)
   onDragEnd()
 }
 
@@ -232,8 +299,13 @@ function onDragEnd() {
   dragOverIndex.value = null
 }
 
-function saveDomains() {
-  editSetting({managedDomains: managedDomainsData.value.filter(d => d.domain)})
+async function saveDomains() {
+  if (newDomainInput.value.trim()) {
+    addDomain()
+    if (newDomainInput.value.trim()) return
+  }
+  const saved = managedDomainsData.value.filter(d => d.domain).map(d=>({...d}))
+  if (await editSetting({managedDomains:saved})) domainsBaseline = JSON.stringify(saved)
 }
 
 function addDomainMapping() {
@@ -244,10 +316,11 @@ function addDomainMapping() {
   }
 }
 
-function saveDomainMapping() {
-  editSetting({domainMapping: {...domainMappingData}}, true).then(ok => {
-    if (ok) domainMappingShow.value = false
-  })
+async function saveDomainMapping() {
+  if (!!newMappingSource.value !== !!newMappingDisplay.value) { ElMessage.warning(t('settingsMappingIncomplete'));return }
+  if (newMappingSource.value && newMappingDisplay.value) addDomainMapping()
+  const saved = {...domainMappingData}
+  if (await editSetting({domainMapping:saved}, true)) mappingBaseline = JSON.stringify(saved)
 }
 </script>
 
@@ -307,6 +380,7 @@ function saveDomainMapping() {
 }
 
 .domain-list {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -356,14 +430,14 @@ function saveDomainMapping() {
     flex-shrink: 0;
     width: 20px;
     text-align: center;
-    font-size: 11.5px;
+    font-size: 12px;
     font-family: 'SF Mono', 'Fira Code', monospace;
     color: var(--el-text-color-placeholder);
   }
 }
 
 .domain-name {
-  font-size: 13px;
+  font-size: 14px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -378,7 +452,19 @@ function saveDomainMapping() {
   flex-shrink: 0;
 
   .el-switch { margin: 0 4px; }
+  .el-button + .el-button { margin-left: 0; }
+  @media (max-width: 600px) { .domain-step { display: none; } }
 }
+.domain-icon-button { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; border:0; border-radius:5px; background:transparent; color:var(--el-text-color-regular); cursor:pointer; }
+.domain-icon-button:hover:not(:disabled) { background:var(--el-fill-color); color:var(--el-color-primary); }
+.domain-icon-button:disabled { color:var(--el-text-color-placeholder); cursor:not-allowed; }
+.domain-icon-button:focus-visible { outline:2px solid var(--el-color-primary); outline-offset:1px; }
+@media(max-width:680px),(pointer:coarse) { .domain-icon-button { width:36px; height:36px; } }
+
+.domain-move-name { margin: 0 0 16px; overflow-wrap: anywhere; font-weight: 500; }
+.domain-position-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.domain-position-field .el-input-number { width: 130px; }
+.domain-position-hint { margin: 10px 0 0; color: var(--el-text-color-secondary); font-size: 12px; }
 
 .domain-save-row {
   display: flex;
@@ -394,29 +480,65 @@ function saveDomainMapping() {
   text-align: center;
   color: var(--el-text-color-secondary);
   padding: 20px 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .domain-count {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--el-text-color-secondary);
 }
 
 .mapping-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  width: 100%;
+  max-width: 680px;
 }
 
-.mapping-row {
-  display: flex;
+.mapping-row, .mapping-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr) var(--settings-control-height, 32px);
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  > .el-select, > .el-input { min-width: 0; width: 100%; }
+  > .el-button { margin: 0; width: var(--settings-control-height, 32px); height: var(--settings-control-height, 32px); }
 }
+.mapping-columns {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  > span:last-child { grid-column: 3; }
+}
+.mapping-arrow { color: var(--el-text-color-secondary); }
 
 .mapping-source {
-  min-width: 100px;
-  text-align: center;
+  display: block;
+  min-width: 0;
+  padding: 0 11px;
+  height: var(--settings-control-height, 32px);
+  line-height: var(--settings-control-height, 32px);
+  box-sizing: border-box;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .mapping-columns { display: none; }
+  .mapping-row {
+    grid-template-columns: minmax(0, 1fr) var(--settings-control-height, 36px);
+    padding: 8px 0;
+    border-bottom: 1px solid var(--el-border-color-extra-light);
+    > .mapping-source, > .el-select, > .el-input { grid-column: 1; }
+    > .el-button { grid-column: 2; grid-row: 1 / span 2; }
+  }
+  .mapping-arrow { display: none; }
 }
 
 :deep(.mapping-dialog.el-dialog) {

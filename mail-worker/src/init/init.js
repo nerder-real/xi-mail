@@ -1,13 +1,20 @@
 import settingService from '../service/setting-service';
+import oauthBindingService from '../service/oauth-binding-service';
+import securityRateLimit from '../service/security-rate-limit-service';
 import emailUtils from '../utils/email-utils';
 import {emailConst} from "../const/entity-const";
+import { isSecureSecret } from '../utils/secret-policy';
+import starSchemaService from '../service/star-schema-service';
+import { ensureFeaturePermissions } from '../service/feature-permission-service';
+import mailShare from '../service/mail-share-service';
+import { ensureAnalysisIndexes } from '../service/mail-index-service';
 
 const dbInit = {
 	async init(c) {
 
 		const secret = c.req.param('secret');
 
-		if (secret !== c.env.jwt_secret) {
+		if (!isSecureSecret(c.env.init_secret) || secret !== c.env.init_secret) {
 			return c.notFound();
 		}
 
@@ -38,11 +45,17 @@ const dbInit = {
 		await this.v3_7DB(c);
 		await this.v3_8DB(c);
 		await this.v3_9DB(c);
-		await this.v4_0DB(c);
 		await this.v4_1DB(c);
 		await this.v4_2DB(c);
 		await this.v4_3DB(c);
+		await oauthBindingService.ensure(c);
+		await securityRateLimit.ensure(c);
 		await this.v4_4DB(c);
+		await this.v4_5DB(c);
+		await starSchemaService.ensure(c);
+		await ensureFeaturePermissions(c);
+		await mailShare.ensure(c);
+		await ensureAnalysisIndexes(c);
 		await settingService.refresh(c);
 		return c.text('success');
 	},
@@ -186,12 +199,6 @@ const dbInit = {
 		} catch (e) {}
 	},
 
-	async v4_0DB(c) {
-		try {
-			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN reg_key_hint_en TEXT NOT NULL DEFAULT '';`).run();
-		} catch (e) {}
-	},
-
 	async v4_1DB(c) {
 		try {
 			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN sender_filter_mode INTEGER NOT NULL DEFAULT 0;`).run();
@@ -253,6 +260,10 @@ const dbInit = {
 		try {
 			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN ai_model TEXT NOT NULL DEFAULT '@cf/meta/llama-3.1-8b-instruct-fast';`).run();
 		} catch (e) {}
+	},
+
+	async v4_5DB(c) {
+		await settingService.ensureSendColumns(c);
 	},
 
 	async v2_9DB(c) {

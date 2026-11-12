@@ -20,7 +20,7 @@
         <div class="setting-item">
           <div><span>{{ $t('regKey') }}</span></div>
           <div>
-            <el-select
+            <el-select popper-class="sys-setting-popper"
                 @change="change"
                 :style="`width: ${ locale === 'en' ?  100 : 80 }px;`"
                 v-model="setting.regKey"
@@ -54,23 +54,6 @@
         </div>
         <div class="setting-item" v-if="regKeyEnabled">
           <div>
-            <span>{{ $t('regKeyHintEn') }}</span>
-            <el-tooltip effect="dark" :content="$t('regKeyHintEnDesc')">
-              <Icon class="warning" icon="mingcute:information-line" width="18" height="18"/>
-            </el-tooltip>
-          </div>
-          <div class="forward">
-            <el-input
-              v-model="setting.regKeyHintEn"
-              :placeholder="$t('regKeyHintEnPlaceholder')"
-              style="width: 200px;"
-              clearable
-              @change="change"
-            />
-          </div>
-        </div>
-        <div class="setting-item" v-if="regKeyEnabled">
-          <div>
             <span>{{ $t('regKeyLink') }}</span>
             <el-tooltip effect="dark" :content="$t('regKeyLinkDesc')">
               <Icon class="warning" icon="mingcute:information-line" width="18" height="18"/>
@@ -87,43 +70,22 @@
           </div>
         </div>
         <div class="setting-item">
-          <div><span>{{ $t('addAccount') }}</span></div>
-          <div>
-            <el-switch @change="change" :before-change="beforeChange" :active-value="0" :inactive-value="1"
-                       v-model="setting.addEmail"/>
-          </div>
-        </div>
-        <div class="setting-item">
-          <div>
-            <span>{{ $t('multipleEmail') }}</span>
-            <el-tooltip effect="dark" :content="$t('multipleEmailDesc')">
-              <Icon class="warning" icon="mingcute:information-line" width="18" height="18"/>
-            </el-tooltip>
-          </div>
-          <div>
-            <el-switch @change="change" :before-change="beforeChange" :active-value="0" :inactive-value="1"
-                       v-model="setting.manyEmail"/>
-          </div>
-        </div>
-        <div class="setting-item">
           <div class="title-item"><span>{{ $t('websiteTitle') }}</span></div>
           <div class="email-title">
-            <span>{{ setting.title }}</span>
-            <el-button class="opt-button" size="small" type="primary" @click="editTitleShow = true">
-              <Icon icon="mingcute:edit-2-line" width="16" height="16"/>
-            </el-button>
+            <el-input v-model="editTitle" :aria-label="$t('websiteTitle')" :placeholder="$t('websiteTitle')" @keyup.enter="saveTitle" />
+            <el-button type="primary" :loading="titleSaving" :disabled="settingLoading && !titleSaving" @click="saveTitle">{{ $t('save') }}</el-button>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div><span>{{ $t('websiteSubtitle') }}</span><el-tooltip :content="$t('websiteSubtitleDesc')"><Icon icon="mingcute:information-line" width="18" height="18" /></el-tooltip></div>
+          <div class="email-title">
+            <el-input v-model="editSubtitle" :aria-label="$t('websiteSubtitle')" :placeholder="$t('websiteSubtitlePlaceholder')" :maxlength="100" @keyup.enter="saveSubtitle" />
+            <el-button type="primary" :loading="subtitleSaving" :disabled="settingLoading && !subtitleSaving" @click="saveSubtitle">{{ $t('save') }}</el-button>
           </div>
         </div>
       </div>
     </div>
 
-    <el-dialog class="sys-setting-dialog ss-dialog-sm" v-model="editTitleShow" :title="$t('changeTitle')"
-               @closed="editTitle = setting.title">
-      <form>
-        <el-input type="text" :placeholder="$t('websiteTitle')" v-model="editTitle"/>
-        <el-button type="primary" :loading="settingLoading" @click="saveTitle">{{ $t('save') }}</el-button>
-      </form>
-    </el-dialog>
   </div>
 </template>
 
@@ -138,10 +100,11 @@ defineOptions({
 })
 
 const {t, locale} = useI18n()
-const {setting, settingLoading, editSetting, change, beforeChange, onSettingsLoaded} = useSysSetting()
+const {setting, settingLoading, editSetting, change, beforeChange, onSettingsLoaded, onSettingsDirty} = useSysSetting()
 
-const editTitleShow = ref(false)
-const editTitle = ref('')
+const editTitle = ref(''), editSubtitle = ref('')
+const titleSaving = ref(false), subtitleSaving = ref(false)
+let titleBaseline, subtitleBaseline
 
 const regKeyEnabled = computed(() => setting.value.regKey === 0 || setting.value.regKey === 2)
 
@@ -152,13 +115,38 @@ const regKeyOptions = computed(() => [
 ])
 
 onSettingsLoaded(() => {
-  editTitle.value = setting.value.title
+  if (titleBaseline === undefined || editTitle.value === titleBaseline) {
+    editTitle.value = setting.value.title
+    titleBaseline = editTitle.value
+  }
+  if (subtitleBaseline === undefined || editSubtitle.value === subtitleBaseline) {
+    editSubtitle.value = setting.value.subtitle || ''
+    subtitleBaseline = editSubtitle.value
+  }
+})
+onSettingsDirty(() => (titleBaseline !== undefined && editTitle.value !== titleBaseline) || (subtitleBaseline !== undefined && editSubtitle.value !== subtitleBaseline), () => {
+  editTitle.value = setting.value.title;titleBaseline = editTitle.value
+  editSubtitle.value = setting.value.subtitle || '';subtitleBaseline = editSubtitle.value
 })
 
-function saveTitle() {
-  editSetting({title: editTitle.value}).then(ok => {
-    if (ok) editTitleShow.value = false
-  })
+async function saveTitle() {
+  if (settingLoading.value) return
+  const saved = editTitle.value
+  titleSaving.value = true
+  try {
+    if (await editSetting({title:saved})) titleBaseline = saved
+  } finally { titleSaving.value = false }
+}
+async function saveSubtitle() {
+  if (settingLoading.value) return
+  const saved = editSubtitle.value.trim()
+  subtitleSaving.value = true
+  try {
+    if (await editSetting({subtitle:saved})) {
+      subtitleBaseline = saved
+      editSubtitle.value = saved
+    }
+  } finally { subtitleSaving.value = false }
 }
 </script>
 
@@ -168,17 +156,14 @@ function saveTitle() {
   display: flex;
   gap: 12px;
   align-items: center;
+  width: 320px;
+  max-width: 100%;
+  min-width: 0;
 
-  span {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    font-size: 14px;
-    color: var(--el-text-color-secondary);
-    background: var(--el-fill-color-light);
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-family: inherit;
+  .el-input {
+    flex: 1;
+    width: 0;
+    min-width: 0;
   }
 
   .el-button {

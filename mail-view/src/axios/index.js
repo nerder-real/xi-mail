@@ -48,7 +48,6 @@ function applyInterceptors(instance, serverId) {
                 reject(data)
             } else if (data.code === 502) {
                 ElMessage({
-                    dangerouslyUseHTMLString: true,
                     message: data.message,
                     type: 'error',
                     plain: true,
@@ -79,6 +78,8 @@ function applyInterceptors(instance, serverId) {
 
         if (noMsg) {
             return Promise.reject(error)
+        } else if (error.response?.status === 429) {
+            ElMessage({ message: error.response.data?.message || i18n.global.t('reqFailErrorMsg'), type: 'warning', plain: true, grouping: true })
         } else if (error.message?.includes('Network Error')) {
             ElMessage({
                 message: i18n.global.t('networkErrorMsg'),

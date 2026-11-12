@@ -44,20 +44,24 @@ const sysSettingSections = [
     'registration',
     'domain',
     'integration',
+    'oauth',
     'sub-workers',
     'appearance',
+    'language',
     'servers',
     'about'
 ]
 
 const routers = {
+    'transfer:query': [{ path: '/transfer', name: 'transfer', component: () => import('@/views/transfer/index.vue'),
+        meta: { title: 'transferPending', name: 'transfer', menu: true } }],
     'email:send': [
         {
             path: '/sent',
             name: 'send',
-            component: () => import('@/views/send/index.vue'),
+            component: () => import('@/views/outbox/index.vue'),
             meta: {
-                title: 'sent',
+                title: 'outbox',
                 name: 'send',
                 menu: true
             }
@@ -65,7 +69,7 @@ const routers = {
         {
             path: '/drafts',
             name: 'draft',
-            component: () => import('@/views/draft/index.vue'),
+            redirect: '/sent',
             meta: {
                 title: 'drafts',
                 name: 'draft',
@@ -97,22 +101,23 @@ const routers = {
         path: '/system-setting',
         name: 'sys-setting',
         component: () => import('@/views/sys-setting/index.vue'),
-        redirect: '/system-setting/website',
+        redirect: '/system-setting/overview',
         meta: {
             title: 'SystemSettings',
             name: 'sys-setting',
             menu: true
         },
-        children: sysSettingSections.map(section => ({
+        children: [{path:'overview',name:'sys-setting-overview',component:{render:()=>null}}, ...sysSettingSections.map(section => ({
             path: section,
             name: `sys-setting-${section}`,
             component: sysSettingSectionModules[`../views/sys-setting/sections/${section}.vue`],
+            beforeEnter: section === 'website' ? to => ['addAccount','multipleEmail'].includes(to.query.find) ? {name:'sys-setting-registration',query:to.query,replace:true} : true : undefined,
             meta: {
                 title: 'SystemSettings',
                 name: 'sys-setting',
                 menu: true
             }
-        }))
+        }))]
     }],
     'reg-key:query': [{
         path: '/invite-code',

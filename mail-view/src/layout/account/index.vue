@@ -13,7 +13,9 @@
           <Icon icon="mingcute:search-line" width="14" height="14" />
         </template>
       </el-input>
-      <Icon class="icon refresh" icon="mingcute:refresh-2-line" width="16" height="16" @click="refresh"/>
+      <el-tooltip :content="$t('refresh')" placement="top">
+        <Icon class="icon" icon="mingcute:refresh-2-line" width="18" height="18" @click="refresh"/>
+      </el-tooltip>
     </div>
 
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
@@ -40,7 +42,7 @@
                 width="15" height="15"
               />
             </div>
-            <span class="row-email">{{ item.email }}</span>
+            <span class="row-email" :title="item.email">{{ item.email }}</span>
             <Icon
               v-if="item.sort > 0 && item.accountId !== userStore.user.account?.accountId"
               icon="mingcute:pin-fill"
@@ -49,23 +51,23 @@
             />
           </div>
           <div class="row-actions" @click.stop>
-            <Icon
-              icon="mingcute:copy-2-line"
-              width="15" height="15"
-              class="action-icon"
-              @click.stop="copyAccount(item.email)"
-            />
+            <el-tooltip :content="$t('copy')" placement="top">
+              <button type="button" class="xi-icon-button" :aria-label="$t('copy')" @click.stop="copyAccount(item.email)">
+                <Icon icon="mingcute:copy-2-line" width="16" height="16" />
+              </button>
+            </el-tooltip>
             <el-dropdown trigger="click" placement="bottom-end">
-              <Icon
-                icon="mingcute:more-1-fill"
-                width="16" height="16"
-                class="action-icon"
-              />
+              <button type="button" class="xi-icon-button" :aria-label="$t('moreNavigation')">
+                <Icon icon="mingcute:more-1-line" width="16" height="16" />
+              </button>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item v-if="hasPerm('account:share')" @click="shareAccount = item; shareShow = true">
+                    <div class="row-menu-item"><Icon icon="mingcute:link-line" width="18" height="18"/><span>{{ $t('shareTitle') }}</span></div>
+                  </el-dropdown-item>
                   <el-dropdown-item v-if="hasPerm('email:send')" @click="openSetName(item)">
                     <div class="row-menu-item">
-                      <Icon icon="mingcute:edit-2-line" width="16" height="16"/>
+                      <Icon icon="mingcute:edit-2-line" width="18" height="18"/>
                       <span>{{ $t('rename') }}</span>
                     </div>
                   </el-dropdown-item>
@@ -79,7 +81,7 @@
                     </div>
                   </el-dropdown-item>
                   <el-dropdown-item
-                    v-if="item.accountId !== userStore.user.account?.accountId
+                    v-if="hasPerm('transfer:send') && item.accountId !== userStore.user.account?.accountId
                       && item.email?.toLowerCase() !== userStore.user.email?.toLowerCase()"
                     @click="openTransfer(item)"
                   >
@@ -146,8 +148,9 @@
       </div>
     </el-scrollbar>
 
+    <MailShareDialog v-model="shareShow" :account="shareAccount" />
     <!-- Add dialog -->
-    <el-dialog v-model="showAdd" :title="$t('addAccount')">
+    <el-dialog v-model="showAdd" :title="$t('addAccount')" append-to-body class="add-account-dialog">
       <div class="add-form">
         <div class="add-field">
           <label class="field-label">{{ $t('emailAccount') }}</label>
@@ -172,22 +175,15 @@
         </div>
         <div class="add-field">
           <label class="field-label">{{ $t('select') }}</label>
-          <el-select v-model="addForm.suffix" style="width: 100%">
+          <el-select v-model="addForm.suffix" filterable :aria-label="$t('selectEmailSuffix')" style="width: 100%">
             <el-option v-for="item in domainList" :key="item" :label="item" :value="item"/>
           </el-select>
         </div>
-        <div class="email-preview" v-if="addForm.email">
-          <Icon icon="mingcute:mail-line" width="13" height="13" />
+        <button type="button" class="email-preview" v-if="addForm.email" :aria-label="$t('copy') + ' ' + addForm.email + addForm.suffix" :title="$t('clickToCopy')" @click="copyAccount(addForm.email + addForm.suffix)">
+          <Icon icon="mingcute:mail-line" width="14" height="14" />
           <span class="email-preview-text">{{ addForm.email }}{{ addForm.suffix }}</span>
-          <el-tooltip :content="$t('clickToCopy')" placement="top" :show-after="200">
-            <Icon
-              icon="mingcute:copy-2-line"
-              width="14" height="14"
-              class="email-preview-copy"
-              @click="copyAccount(addForm.email + addForm.suffix)"
-            />
-          </el-tooltip>
-        </div>
+          <Icon icon="mingcute:copy-2-line" width="14" height="14" class="email-preview-copy" />
+        </button>
         <el-button class="btn" type="primary" @click="submit" :loading="addLoading">{{ $t('add') }}</el-button>
       </div>
       <div
@@ -223,6 +219,7 @@
 
 <script setup>
 import { Icon } from "@iconify/vue";
+import MailShareDialog from '@/components/MailShareDialog.vue';
 import { nextTick, reactive, ref, computed, watch } from "vue";
 import {
   accountList,
@@ -251,6 +248,7 @@ const settingStore = useSettingStore();
 const emailStore = useEmailStore();
 
 const showAdd = ref(false);
+const shareShow = ref(false), shareAccount = ref(null);
 const addLoading = ref(false);
 const domainList = settingStore.domainList;
 const accounts = reactive([]);
@@ -531,6 +529,9 @@ function submit() {
 <style>
 path[fill="#ffdda1"] { fill: #ffdd7d; }
 </style>
+<style>
+.add-account-dialog.el-dialog { width:min(400px, calc(100vw - 40px)) !important; margin-inline:auto !important; }
+</style>
 <style scoped lang="scss">
 .account-box {
   border-right: 1px solid var(--el-border-color-lighter) !important;
@@ -570,11 +571,6 @@ path[fill="#ffdda1"] { fill: #ffdd7d; }
     :deep(.el-input__inner) {
       font-size: 12px;
     }
-  }
-
-  .refresh {
-    color: var(--el-text-color-placeholder);
-    &:hover { color: var(--el-text-color-primary); }
   }
 }
 
@@ -627,11 +623,13 @@ path[fill="#ffdda1"] { fill: #ffdd7d; }
 
     .row-email {
       font-size: 12.5px;
+      min-width: 0;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
       color: var(--el-text-color-regular);
-      line-height: 1;
+      line-height: 1.5;
+      padding-block: 1px;
     }
 
     .pin-flag {
@@ -649,17 +647,14 @@ path[fill="#ffdda1"] { fill: #ffdd7d; }
     opacity: 0;
     transition: opacity 0.15s;
 
-    .action-icon {
-      cursor: pointer;
-      padding: 3px;
-      border-radius: 4px;
-      color: var(--el-text-color-secondary);
-      transition: all 0.15s;
-      &:hover {
-        background: var(--el-fill-color);
-        color: var(--el-text-color-primary);
-      }
-    }
+    &:focus-within { opacity: 1; }
+  }
+
+  &:focus-within .row-actions { opacity: 1; }
+
+  @media (pointer: coarse) {
+    min-height: 42px;
+    .row-actions { opacity: 1; }
   }
 }
 
@@ -677,9 +672,9 @@ path[fill="#ffdda1"] { fill: #ffdd7d; }
   line-height: 1;
 
   svg {
-    flex: 0 0 16px;
-    width: 16px;
-    height: 16px;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
   }
 }
 
@@ -754,6 +749,13 @@ path[fill="#ffdda1"] { fill: #ffdd7d; }
   color: var(--el-color-primary);
   font-family: monospace;
   border: 1px solid var(--el-border-color-lighter);
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
+  &:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+  > svg { flex-shrink: 0; }
 
   .email-preview-text {
     flex: 1;

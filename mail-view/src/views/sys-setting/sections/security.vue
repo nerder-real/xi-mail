@@ -1,9 +1,9 @@
 <template>
   <div class="sys-setting-section">
-    <div class="settings-card">
-      <div class="card-title">{{ $t('securitySetting') }}</div>
+    <div v-if="inArea('accounts') || inArea('filter')" class="settings-card">
+      <div class="card-title">{{ $t(sectionArea === 'filter' ? 'settingsFilterTitle' : sectionArea === 'accounts' ? 'settingsAccessTitle' : 'securitySetting') }}</div>
       <div class="card-content">
-        <div class="setting-item">
+        <div v-if="inArea('accounts')" class="setting-item">
           <div>
             <span>{{ $t('autoBan') }}</span>
             <el-tooltip effect="dark" :content="$t('autoBanDesc')">
@@ -11,11 +11,11 @@
             </el-tooltip>
           </div>
           <div class="auto-ban-right">
-            <el-input-number v-model="setting.autoBanMonths" @change="change" :min="0" :max="120" :step="1" style="width: 110px;" />
+            <el-input-number class="settings-number-input" controls-position="right" v-model="setting.autoBanMonths" :aria-label="$t('autoBan')" @change="change" :min="0" :max="120" :step="1" />
             <span class="ban-unit">{{ $t('month') }}</span>
           </div>
         </div>
-        <div class="setting-item">
+        <div v-if="inArea('accounts')" class="setting-item">
           <div>
             <span>{{ $t('banMessage') }}</span>
             <el-tooltip effect="dark" :content="$t('banMessageDesc')">
@@ -26,42 +26,28 @@
             <el-input v-model="setting.banMessage" @change="change" style="width: 200px;" />
           </div>
         </div>
-        <div class="setting-item">
-          <div>
-            <span>{{ $t('emailKeywordBlacklist') }}</span>
-            <el-tooltip effect="dark" :content="$t('emailKeywordBlacklistDesc')">
-              <Icon class="warning" icon="mingcute:information-line" width="18" height="18"/>
-            </el-tooltip>
-          </div>
-          <div class="forward">
-            <el-button class="opt-button" size="small" type="primary" @click="keywordBlacklistShow = true">
-              <Icon icon="mingcute:settings-3-line" width="18" height="18"/>
-            </el-button>
-          </div>
+        <div v-if="inArea('filter')" class="settings-inline-field">
+          <div class="settings-inline-heading"><span>{{ $t('emailKeywordBlacklist') }}</span></div>
+          <p>{{ $t('emailKeywordBlacklistHint') }}</p>
+          <el-input-tag v-model="keywordBlacklistData" :aria-label="$t('emailKeywordBlacklist')" :placeholder="$t('emailKeywordBlacklistPlaceholder')" />
+          <div class="settings-inline-actions"><el-button @click="resetKeywordBlacklist">{{ $t('settingsInlineReset') }}</el-button><el-button type="primary" :loading="settingLoading" @click="saveKeywordBlacklist">{{ $t('settingsInlineSave') }}</el-button></div>
         </div>
-        <div class="setting-item">
-          <div>
-            <span>{{ $t('senderDomainBlacklist') }}</span>
-            <el-tooltip effect="dark" :content="$t('senderFilterModeDesc')">
-              <Icon class="warning" icon="mingcute:information-line" width="18" height="18"/>
-            </el-tooltip>
-          </div>
-          <div class="forward" style="display: flex; gap: 8px; align-items: center;">
-            <el-select v-model="setting.senderFilterMode" style="width: 110px" @change="change">
-              <el-option :label="$t('senderFilterBlacklist')" :value="0"/>
-              <el-option :label="$t('senderFilterWhitelist')" :value="1"/>
+        <div v-if="inArea('filter')" class="settings-inline-field">
+          <div class="settings-inline-heading"><span>{{ $t('senderDomainBlacklist') }}</span>
+            <el-select class="settings-compact-select sender-mode-select" popper-class="sys-setting-popper" v-model="setting.senderFilterMode" :aria-label="$t('settingsFilterDomains')" @change="change">
+              <el-option :label="$t('senderFilterBlacklist')" :value="0"/><el-option :label="$t('senderFilterWhitelist')" :value="1"/>
             </el-select>
-            <el-button class="opt-button" size="small" type="primary"
-              @click="setting.senderFilterMode === 1 ? senderDomainWhitelistShow = true : senderDomainBlacklistShow = true">
-              <Icon icon="mingcute:settings-3-line" width="18" height="18"/>
-            </el-button>
           </div>
+          <p>{{ setting.senderFilterMode === 1 ? $t('senderDomainWhitelistHint') : $t('senderDomainBlacklistHint') }}</p>
+          <el-input-tag v-if="setting.senderFilterMode === 1" v-model="senderDomainWhitelistData" :aria-label="$t('senderDomainWhitelist')" :placeholder="$t('senderDomainWhitelistPlaceholder')" />
+          <el-input-tag v-else v-model="senderDomainBlacklistData" :aria-label="$t('senderDomainBlacklist')" :placeholder="$t('senderDomainBlacklistPlaceholder')" />
+          <div class="settings-inline-actions"><el-button @click="setting.senderFilterMode === 1 ? resetSenderDomainWhitelist() : resetSenderDomainBlacklist()">{{ $t('settingsInlineReset') }}</el-button><el-button type="primary" :loading="settingLoading" @click="setting.senderFilterMode === 1 ? saveSenderDomainWhitelist() : saveSenderDomainBlacklist()">{{ $t('settingsInlineSave') }}</el-button></div>
         </div>
       </div>
     </div>
 
     <!-- Email maintenance -->
-    <div class="settings-card">
+    <div v-if="inArea('retention')" class="settings-card">
       <div class="card-title">{{ $t('emailMaintenance') }}</div>
       <div class="card-content">
         <div class="setting-item">
@@ -82,12 +68,15 @@
             </el-tooltip>
           </div>
           <div class="auto-ban-right">
-            <el-input-number v-model="setting.autoCleanDays" @change="change" :min="0" :max="3650" :step="1" style="width: 110px;" />
+            <el-input-number class="settings-number-input" controls-position="right" v-model="setting.autoCleanDays" :aria-label="$t('autoCleanEmail')" @change="change" :min="0" :max="3650" :step="1" />
             <span class="ban-unit">{{ $t('day') }}</span>
-            <el-button class="opt-button" size="small" type="primary" @click="autoCleanExcludeShow = true">
-              <Icon icon="mingcute:settings-3-line" width="18" height="18"/>
-            </el-button>
           </div>
+        </div>
+        <div class="settings-inline-field">
+          <div class="settings-inline-heading"><span>{{ $t('autoCleanExclude') }}</span></div>
+          <p>{{ $t('autoCleanExcludeHint') }}</p>
+          <el-input-tag v-model="autoCleanExcludeData" :aria-label="$t('autoCleanExclude')" :placeholder="$t('autoCleanExcludePlaceholder')" />
+          <div class="settings-inline-actions"><el-button @click="resetAutoCleanExclude">{{ $t('settingsInlineReset') }}</el-button><el-button type="primary" :loading="settingLoading" @click="saveAutoCleanExclude">{{ $t('settingsInlineSave') }}</el-button></div>
         </div>
         <div class="setting-item">
           <div>
@@ -103,7 +92,7 @@
     </div>
 
     <!-- Global API Token -->
-    <div class="settings-card">
+    <div v-if="inArea('accounts')" class="settings-card">
       <div class="card-title">
         <div class="card-title-row">
           <span>{{ $t('globalToken') }}</span>
@@ -123,16 +112,16 @@
             </div>
             <div class="gt-actions">
               <el-tooltip :content="globalTokenVisible ? $t('hide') : $t('show')">
-                <el-button size="small" circle plain @click="globalTokenVisible = !globalTokenVisible">
+                <el-button circle plain @click="globalTokenVisible = !globalTokenVisible">
                   <Icon :icon="globalTokenVisible ? 'mingcute:eye-close-line' : 'mingcute:eye-2-line'" width="14" height="14"/>
                 </el-button>
               </el-tooltip>
               <el-tooltip :content="$t('copy')" v-if="globalToken">
-                <el-button size="small" circle plain @click="copyGlobalToken">
+                <el-button circle plain @click="copyGlobalToken">
                   <Icon icon="mingcute:copy-2-line" width="14" height="14"/>
                 </el-button>
               </el-tooltip>
-              <el-button size="small" type="primary" @click="onGenerateGlobalToken" :loading="globalTokenGenerating">
+              <el-button type="primary" @click="onGenerateGlobalToken" :loading="globalTokenGenerating">
                 <Icon :icon="globalToken ? 'mingcute:refresh-2-line' : 'mingcute:add-line'" width="14" height="14" style="margin-right:4px"/>
                 {{ globalToken ? $t('regenerate') : $t('generate') }}
               </el-button>
@@ -163,66 +152,40 @@
       </div>
     </div>
 
-    <el-dialog class="sys-setting-dialog ss-dialog-sm" v-model="keywordBlacklistShow" :title="$t('emailKeywordBlacklist')"
-               @closed="resetKeywordBlacklist">
-      <div class="tag-editor">
-        <div class="tag-editor-hint">{{ $t('emailKeywordBlacklistHint') }}</div>
-        <el-input-tag v-model="keywordBlacklistData" :placeholder="$t('emailKeywordBlacklistPlaceholder')" />
-        <el-button type="primary" :loading="settingLoading" @click="saveKeywordBlacklist">{{ $t('save') }}</el-button>
-      </div>
-    </el-dialog>
-
-    <el-dialog class="sys-setting-dialog ss-dialog-sm" v-model="senderDomainBlacklistShow" :title="$t('senderDomainBlacklist')"
-               @closed="resetSenderDomainBlacklist">
-      <div class="tag-editor">
-        <div class="tag-editor-hint">{{ $t('senderDomainBlacklistHint') }}</div>
-        <el-input-tag v-model="senderDomainBlacklistData" :placeholder="$t('senderDomainBlacklistPlaceholder')" />
-        <el-button type="primary" :loading="settingLoading" @click="saveSenderDomainBlacklist">{{ $t('save') }}</el-button>
-      </div>
-    </el-dialog>
-
-    <el-dialog class="sys-setting-dialog ss-dialog-sm" v-model="senderDomainWhitelistShow" :title="$t('senderDomainWhitelist')"
-               @closed="resetSenderDomainWhitelist">
-      <div class="tag-editor">
-        <div class="tag-editor-hint">{{ $t('senderDomainWhitelistHint') }}</div>
-        <el-input-tag v-model="senderDomainWhitelistData" :placeholder="$t('senderDomainWhitelistPlaceholder')" />
-        <el-button type="primary" :loading="settingLoading" @click="saveSenderDomainWhitelist">{{ $t('save') }}</el-button>
-      </div>
-    </el-dialog>
-
-    <el-dialog class="sys-setting-dialog ss-dialog-sm" v-model="autoCleanExcludeShow" :title="$t('autoCleanExclude')"
-               @closed="resetAutoCleanExclude">
-      <div class="tag-editor">
-        <div class="tag-editor-hint">{{ $t('autoCleanExcludeHint') }}</div>
-        <el-input-tag v-model="autoCleanExcludeData" :placeholder="$t('autoCleanExcludePlaceholder')" />
-        <el-button type="primary" :loading="settingLoading" @click="saveAutoCleanExclude">{{ $t('save') }}</el-button>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import {defineOptions, ref} from "vue";
+import {computed, defineOptions, ref, watch} from "vue";
 import {Icon} from "@iconify/vue";
 import {useI18n} from "vue-i18n";
 import {generateGlobalToken, getGlobalToken, setGlobalTokenEnabled} from "@/request/setting.js";
 import {useSysSetting} from "../use-sys-setting.js";
+import {useRoute} from 'vue-router';
 
 defineOptions({
   name: 'sys-setting-security'
 })
 
+const props = defineProps({settingsArea:{type:String,default:''}})
 const {t} = useI18n()
-const {setting, settingLoading, editSetting, change, beforeChange, onSettingsLoaded} = useSysSetting()
+const route = useRoute()
+const sectionArea = computed(() => {
+  if (props.settingsArea) return props.settingsArea
+  const key = route.query.find
+  if (['senderDomainBlacklist','emailKeywordBlacklist'].includes(key)) return 'filter'
+  if (['autoBan','banMessage','globalToken'].includes(key)) return 'accounts'
+  if (['syncDelete','autoCleanEmail','newEmailNotify'].includes(key)) return 'retention'
+  return 'all'
+})
+const inArea = area => sectionArea.value === 'all' || sectionArea.value === area
+const {setting, settingLoading, editSetting, change, beforeChange, onSettingsLoaded, onSettingsDirty} = useSysSetting()
 
-const keywordBlacklistShow = ref(false)
 const keywordBlacklistData = ref([])
-const senderDomainBlacklistShow = ref(false)
 const senderDomainBlacklistData = ref([])
-const senderDomainWhitelistShow = ref(false)
 const senderDomainWhitelistData = ref([])
-const autoCleanExcludeShow = ref(false)
 const autoCleanExcludeData = ref([])
+const listBaselines = {}
 
 const globalToken = ref('')
 const globalTokenEnabled = ref(false)
@@ -236,55 +199,51 @@ function toList(value) {
 
 function resetKeywordBlacklist() {
   keywordBlacklistData.value = toList(setting.value.emailKeywordBlacklist)
+  listBaselines.keyword = JSON.stringify(keywordBlacklistData.value)
 }
 
 function resetSenderDomainBlacklist() {
   senderDomainBlacklistData.value = toList(setting.value.senderDomainBlacklist)
+  listBaselines.blacklist = JSON.stringify(senderDomainBlacklistData.value)
 }
 
 function resetSenderDomainWhitelist() {
   senderDomainWhitelistData.value = toList(setting.value.senderDomainWhitelist)
+  listBaselines.whitelist = JSON.stringify(senderDomainWhitelistData.value)
 }
 
 function resetAutoCleanExclude() {
   autoCleanExcludeData.value = toList(setting.value.autoCleanExclude)
+  listBaselines.exclude = JSON.stringify(autoCleanExcludeData.value)
 }
 
 onSettingsLoaded(() => {
-  resetKeywordBlacklist()
-  resetSenderDomainBlacklist()
-  resetSenderDomainWhitelist()
-  resetAutoCleanExclude()
+  for (const [key,value,reset] of [['keyword',keywordBlacklistData,resetKeywordBlacklist],['blacklist',senderDomainBlacklistData,resetSenderDomainBlacklist],['whitelist',senderDomainWhitelistData,resetSenderDomainWhitelist],['exclude',autoCleanExcludeData,resetAutoCleanExclude]]) {
+    if (listBaselines[key] === undefined || JSON.stringify(value.value) === listBaselines[key]) reset()
+  }
 })
+onSettingsDirty(() => [['keyword',keywordBlacklistData],['blacklist',senderDomainBlacklistData],['whitelist',senderDomainWhitelistData],['exclude',autoCleanExcludeData]].some(([key,value]) => listBaselines[key] !== undefined && JSON.stringify(value.value) !== listBaselines[key]), () => { resetKeywordBlacklist();resetSenderDomainBlacklist();resetSenderDomainWhitelist();resetAutoCleanExclude() })
 
-function saveKeywordBlacklist() {
-  editSetting({emailKeywordBlacklist: keywordBlacklistData.value}, true).then(ok => {
-    if (ok) keywordBlacklistShow.value = false
-  })
+async function saveList(key, value, field, serialize = data => data) {
+  const saved = [...value.value]
+  const ok = await editSetting({[field]:serialize(saved)}, true)
+  if (ok) listBaselines[key] = JSON.stringify(saved)
 }
+const saveKeywordBlacklist = () => saveList('keyword',keywordBlacklistData,'emailKeywordBlacklist')
+const saveSenderDomainBlacklist = () => saveList('blacklist',senderDomainBlacklistData,'senderDomainBlacklist')
+const saveSenderDomainWhitelist = () => saveList('whitelist',senderDomainWhitelistData,'senderDomainWhitelist')
+const saveAutoCleanExclude = () => saveList('exclude',autoCleanExcludeData,'autoCleanExclude',data=>data.join(','))
 
-function saveSenderDomainBlacklist() {
-  editSetting({senderDomainBlacklist: senderDomainBlacklistData.value}, true).then(ok => {
-    if (ok) senderDomainBlacklistShow.value = false
-  })
-}
-
-function saveSenderDomainWhitelist() {
-  editSetting({senderDomainWhitelist: senderDomainWhitelistData.value}, true).then(ok => {
-    if (ok) senderDomainWhitelistShow.value = false
-  })
-}
-
-function saveAutoCleanExclude() {
-  editSetting({autoCleanExclude: autoCleanExcludeData.value.join(',')}, true).then(ok => {
-    if (ok) autoCleanExcludeShow.value = false
-  })
-}
-
-getGlobalToken().then(data => {
-  globalToken.value = data.token || ''
-  globalTokenEnabled.value = !!data.enabled
-}).catch(() => {})
+watch(() => inArea('accounts'), (visible, _, onCleanup) => {
+  if (!visible) return
+  let active = true
+  onCleanup(() => { active = false })
+  getGlobalToken().then(data => {
+    if (!active) return
+    globalToken.value = data.token || ''
+    globalTokenEnabled.value = !!data.enabled
+  }).catch(() => {})
+}, {immediate:true})
 
 function onGlobalTokenEnabledChange(val) {
   setGlobalTokenEnabled(val).catch(() => {
@@ -332,7 +291,7 @@ function copyGlobalToken() {
 }
 
 .global-token-desc {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--el-text-color-secondary);
   margin: 0 0 16px;
   line-height: 1.6;
@@ -366,7 +325,7 @@ function copyGlobalToken() {
   .gt-token-text {
     flex: 1;
     font-family: 'SF Mono', 'Consolas', monospace;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--el-text-color-primary);
     word-break: break-all;
     line-height: 1.5;
@@ -462,7 +421,7 @@ function copyGlobalToken() {
   gap: 10px;
 
   .tag-editor-hint {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--el-text-color-secondary);
   }
 

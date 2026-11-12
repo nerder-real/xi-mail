@@ -6,8 +6,9 @@ import {useSettingStore} from "@/store/setting.js";
 import {useAccountStore} from "@/store/account.js";
 import {useUserStore} from "@/store/user.js";
 import i18n from "@/i18n/index.js";
+import { OAUTH_PROVIDERS } from '@/config/oauth-providers.js';
 
-export const SYS_SETTING_VERSION = 'v3.5.7'
+export const SYS_SETTING_VERSION = 'v3.6.9'
 
 let context = null
 
@@ -24,6 +25,7 @@ function createContext() {
   /* Sections register a handler to re-sync their local form state whenever
      the settings are (re)fetched from the server. */
   const loadedHandlers = new Set()
+  const dirtyChecks = new Map()
 
   let backup = '{}'
 
@@ -36,6 +38,13 @@ function createContext() {
       onUnmounted(() => loadedHandlers.delete(handler))
     }
   }
+
+  function onSettingsDirty(check, discard) {
+    dirtyChecks.set(check, discard)
+    if (getCurrentInstance()) onUnmounted(() => dirtyChecks.delete(check))
+  }
+  function hasUnsavedChanges() { return [...dirtyChecks.keys()].some(check => check()) }
+  function discardUnsavedChanges() { for (const [check,discard] of dirtyChecks) if (check()) discard?.() }
 
   function getSettings() {
     return settingQuery().then(settingData => {
@@ -67,10 +76,19 @@ function createContext() {
     delete settingForm.s3AccessKey
     delete settingForm.s3SecretKey
     delete settingForm.resendTokens
+    delete settingForm.queenTokens
+    delete settingForm.sendflareTokens
+    delete settingForm.sendProviders
     delete settingForm.hasR2
     delete settingForm.hasAi
     delete settingForm.aiModels
     delete settingForm.domainList
+    delete settingForm.hasResendWebhookSecret
+    delete settingForm.translation
+    // OAuth settings are saved only by the provider form, never by unrelated switches.
+    for (const provider of OAUTH_PROVIDERS) {
+      for (const suffix of ['Switch', 'ClientId', 'ClientSecret', 'CallbackUrl', 'HasSecret', 'MinTrustLevel']) delete settingForm[provider.id + suffix]
+    }
     return editSetting(settingForm, false)
   }
 
@@ -109,6 +127,9 @@ function createContext() {
     beforeChange,
     backupSetting,
     onSettingsLoaded,
+    onSettingsDirty,
+    hasUnsavedChanges,
+    discardUnsavedChanges,
   }
 }
 

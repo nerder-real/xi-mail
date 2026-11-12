@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@iconify-json/circle-flags':
+        specifier: 1.2.14
+        version: 1.2.14
       '@iconify/vue':
         specifier: ^4.3.0
         version: 4.3.0(vue@3.5.20)
@@ -35,6 +38,9 @@ importers:
       dexie:
         specifier: ^4.0.11
         version: 4.2.0
+      dompurify:
+        specifier: ^3.4.17
+        version: 3.4.17
       echarts:
         specifier: ^5.6.0
         version: 5.6.0
@@ -780,6 +786,9 @@ packages:
 
   '@floating-ui/utils@0.2.10':
     resolution: {integrity: sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ==}
+
+  '@iconify-json/circle-flags@1.2.14':
+    resolution: {integrity: sha512-svZ6j9ZaHc69eWdO5cY0wiaEo0A9kiiXM8diPx/0JkcBmKhW6Mt5e3OBOSkGBhOOwqV3q6q7DBbDGIwg6Nzz8g==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -1553,6 +1562,9 @@ packages:
   dexie@4.2.0:
     resolution: {integrity: sha512-OSeyyWOUetDy9oFWeddJgi83OnRA3hSFh3RrbltmPgqHszE9f24eUCVLI4mPg0ifsWk0lQTdnS+jyGNrPMvhDA==}
 
+  dompurify@3.4.17:
+    resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
+
   dotenv@17.3.1:
     resolution: {integrity: sha512-IO8C/dzEb6O3F9/twg6ZLXz164a2fhTnEWb95H23Dm4OuN+92NmEAlTrupP9VW6Jm3sO26tQlqyvyi4CsnY9GA==}
     engines: {node: '>=12'}
@@ -1744,7 +1756,7 @@ packages:
 
   glob@7.2.3:
     resolution: {integrity: sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q==}
-    deprecated: Glob versions prior to v9 are no longer supported
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   globalthis@1.0.4:
     resolution: {integrity: sha512-DpLKbNU4WylpxJykQujfCcwYWiV/Jhm50Goo0wrVILAv5jOr9d+H+UR3PhSCD2rCCEIg0uc+G+muBTwD54JhDQ==}
@@ -3625,6 +3637,10 @@ snapshots:
 
   '@floating-ui/utils@0.2.10': {}
 
+  '@iconify-json/circle-flags@1.2.14':
+    dependencies:
+      '@iconify/types': 2.0.0
+
   '@iconify/types@2.0.0': {}
 
   '@iconify/vue@4.3.0(vue@3.5.20)':
@@ -4390,6 +4406,10 @@ snapshots:
   detect-libc@2.1.2: {}
 
   dexie@4.2.0: {}
+
+  dompurify@3.4.17:
+    optionalDependencies:
+      '@types/trusted-types': 2.0.7
 
   dotenv@17.3.1:
     optional: true
