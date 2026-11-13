@@ -5,7 +5,7 @@ import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import mailLinkService, { MAIL_LINK_TTL } from '../../src/service/mail-link-service';
 import telegramService from '../../src/service/telegram-service';
 import jwtUtils from '../../src/utils/jwt-utils';
-import { isSecureSecret } from '../../src/utils/secret-policy';
+import { isSecureSecret, isUsableInitSecret } from '../../src/utils/secret-policy';
 import regKeyService from '../../src/service/reg-key-service';
 import loginService from '../../src/service/login-service';
 import { dbInit } from '../../src/init/init';
@@ -165,6 +165,12 @@ describe('Signing and initialization boundaries', () => {
       expect(await jwtUtils.verifyToken(c, signed({ ...payload, ...changes }))).toBeNull();
     expect(await jwtUtils.verifyToken(c, signed(payload, { alg: 'none', typ: 'JWT' }))).toBeNull();
     expect(await jwtUtils.verifyToken({ env: { jwt_secret: SECRET + '-rotated' } }, token)).toBeNull();
+  });
+  it.each(['abcd', '1234', 'a1b2c3'])('accepts a short initialization secret: %s', secret => {
+    expect(isUsableInitSecret(secret)).toBe(true);
+  });
+  it.each(['abc', '', 'ab/cd', 'ab?cd', 'ab cd'])('rejects an unusable initialization secret: %s', secret => {
+    expect(isUsableInitSecret(secret)).toBe(false);
   });
   it('never accepts the JWT signing key as the initialization credential', async () => {
     const context = { env: { jwt_secret: SECRET, init_secret: SECRET + '-separate-init' }, req: { param: () => SECRET }, notFound: vi.fn(() => 'denied') };

@@ -36,7 +36,9 @@ crons = ["0 16 * * *", "* * * * *"]
 orm_log = false
 domain = ["example.com", "mail.example.com"]
 admin = "admin@example.com"
-# Configure two different random secrets (at least 32 characters each):
+# Configure two different random secrets:
+#   jwt_secret  —— login signing key, at least 32 characters
+#   init_secret —— database initialization key, at least 4 characters
 # npx wrangler secret put jwt_secret
 # npx wrangler secret put init_secret
 

@@ -3,7 +3,7 @@ import oauthBindingService from '../service/oauth-binding-service';
 import securityRateLimit from '../service/security-rate-limit-service';
 import emailUtils from '../utils/email-utils';
 import {emailConst} from "../const/entity-const";
-import { isSecureSecret } from '../utils/secret-policy';
+import { isUsableInitSecret } from '../utils/secret-policy';
 import starSchemaService from '../service/star-schema-service';
 import { ensureFeaturePermissions } from '../service/feature-permission-service';
 import mailShare from '../service/mail-share-service';
@@ -14,7 +14,7 @@ const dbInit = {
 
 		const secret = c.req.param('secret');
 
-		if (!isSecureSecret(c.env.init_secret) || secret !== c.env.init_secret) {
+		if (!isUsableInitSecret(c.env.init_secret) || secret !== c.env.init_secret) {
 			return c.notFound();
 		}
 
