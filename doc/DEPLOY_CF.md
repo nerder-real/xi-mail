@@ -55,9 +55,9 @@
 | 3 | 建 D1 / KV 资源，记下 ID | Cloudflare 网页 |
 | 4 | 连接仓库，并改 **Build command** 与 **Deploy command**（B2） | Worker → Settings → Build → Build configuration |
 | 5 | 填 **Build variables**：`D1_DATABASE_ID`、`KV_NAMESPACE_ID`、`MAIL_DOMAIN`、`ADMIN_EMAIL`（B3） | 同上 → Build variables and secrets |
-| 6 | 加运行时 Secret：`jwt_secret`（B4） | Worker → Settings → Variables and Secrets |
+| 6 | 加运行时 Secret：`jwt_secret`（≥32 位）、`init_secret`（≥4 位）（B4） | Worker → Settings → Variables and Secrets |
 | 7 | 触发一次构建，在日志里确认 `env.db` / `env.kv` 出现（B5） | 构建日志 |
-| 8 | 初始化数据库：访问 `/api/init/<jwt_secret>`（B6） | 浏览器 |
+| 8 | 初始化数据库：访问 `/api/init/<init_secret>`（B6） | 浏览器 |
 | 之后 | 每次 push 自动构建 —— **但上游更新仍要靠模式 A 同步进来** | — |
 
 需要自己维护的东西：**Secrets 分散在两处**（Build variables + 运行时 Secret），且每次上游更新后仍要有人把上游 merge 进仓库。
@@ -162,7 +162,7 @@ git push
 | `KV_NAMESPACE_ID` | ✅ 4/4 | KV Namespace ID（`Workers & Pages → KV → 你的命名空间`） |
 | `CUSTOM_DOMAIN` | ⬜ | **有自定义域名强烈建议配置**（如 `mail.example.com`）：写入 `[[routes]]`；不配则每次部署会移除 Worker 的自定义域名路由 |
 | `R2_BUCKET_NAME` | ⬜ | 留空则不绑定 R2，附件回退 KV（**R2 非必选**） |
-| `INIT_URL` | ⬜ | `https://<worker域名>/api/init/<jwt_secret>` 完整串；配了则每次部署后自动迁移数据库，不配则手动访问一次 |
+| `INIT_URL` | ⬜ | `https://<worker域名>/api/init/<init_secret>` 完整串；配了则每次部署后自动迁移数据库，不配则手动访问一次 |
 | `D1_DATABASE_NAME` | ⬜ | D1 数据库名（仅展示用，不影响绑定），默认 `xi-mail` |
 
 > `WORKER_NAME` 不在这里 —— 它直接写死在 workflow 里（`xi-mail`），不经过 Secret。
@@ -216,7 +216,7 @@ D1/KV 的读写发生在 Worker 运行时，用的是 Worker 自身凭据，与�
 
 Token 值填进 GitHub Secrets 的 `CLOUDFLARE_API_TOKEN` 即可；令牌权限在保存**立即**生效，无需改动其他 Secret。
 
-**业务变量不进 Secrets**（`domain` / `admin` / `jwt_secret`）：它们在 Cloudflare Dashboard
+**业务变量不进 Secrets**（`domain` / `admin` / `jwt_secret` / `init_secret`）：它们在 Cloudflare Dashboard
 配置一次（见下表），`keep_vars = true` 让每次部署自动保留 vars 与 secrets——实测从未丢失。
 丢的从来只有 db/kv 绑定（那是 wrangler 声明式覆盖问题，见 A4）。
 
@@ -224,7 +224,8 @@ Token 值填进 GitHub Secrets 的 `CLOUDFLARE_API_TOKEN` 即可；令牌权限�
 |---|---|---|
 | `domain` | Variable（JSON 文本） | `["mail.example.com"]` |
 | `admin` | Variable（文本） | `admin@example.com` |
-| `jwt_secret` | Secret | 长随机串，**勿含 `? % # / \`**（拼进 `/api/init` URL 路径用；代码无长度强制，≥32 位是安全建议） |
+| `jwt_secret` | Secret | 登录签名密钥，**≥32 位且字符多样**（少于 32 位会让登录直接报「服务异常」） |
+| `init_secret` | Secret | 数据库初始化密钥，**≥4 位**，**勿含 `? % # / \`** 与空白（要拼进 `/api/init/<secret>` 路径）；必须与 `jwt_secret` **不同** |
 
 ## A4. 为什么不会丢 db/kv 绑定
 
@@ -399,12 +400,13 @@ git commit -m "chore: 提交 wrangler.toml 供 CF Workers Builds 使用"
 
 | 类型 | 名称 | 值 |
 |---|---|---|
-| Secret | `jwt_secret` | 较长随机串，勿含 `? % # / \` |
+| Secret | `jwt_secret` | 登录签名密钥，长随机串（≥32 位），如 `openssl rand -hex 32` 的输出 |
+| Secret | `init_secret` | 数据库初始化密钥，≥4 位，勿含 `? % # / \` 与空白，且**不能与 `jwt_secret` 相同** |
 
 > `domain` / `admin` 已由 B3 的 Build variables 写进配置，**不要**再在运行时重复配置，
 > 以免两处取值不一致。
 >
-> `jwt_secret` 因为 `keep_vars = true`（→ 同时带上 `secret_text`）会被保留，
+> `jwt_secret` / `init_secret` 因为 `keep_vars = true`（→ 同时带上 `secret_text`）会被保留，
 > 不会被后续部署清掉。
 
 ## B5. 校验绑定生效
@@ -426,10 +428,10 @@ env.orm_log (false)      Environment Variable
 `/api/init` 是**幂等**的（`CREATE TABLE IF NOT EXISTS` + 重复列 try/catch），**不会清空既有数据**：
 
 ```text
-https://你的worker域名/api/init/<jwt_secret>
+https://你的worker域名/api/init/<init_secret>
 ```
 
-返回 `success` 即成功；返回 `❌ JWT secret mismatch` 说明与 B4 配置的 `jwt_secret` 不一致。
+返回 `success` 即成功；返回 **404 Not Found** 说明 Worker 没有配置 `init_secret`（或长度不足 4 位、含非法字符），或者 URL 里的值与 Worker 配置的不一致。
 
 > 通道 B 没有内置的自动 init 步骤。若希望每次部署后自动初始化，仍建议启用模式 A 的定时任务。
 
