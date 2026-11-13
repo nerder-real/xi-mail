@@ -56,6 +56,14 @@ const names = bindings.map((b) => b.name);
 
 console.log('当前绑定：' + (bindings.map((b) => `${b.name}:${b.type}`).join(', ') || '(无)'));
 
+// 提示性检查（不失败）：/api/init 依赖 init_secret，缺失时初始化会 404。
+if (!names.includes('jwt_secret')) {
+  console.log('::warning::Worker 未配置 jwt_secret —— 登录会返回「服务异常」，请到 Cloudflare Dashboard 添加（≥32 位）。');
+}
+if (!names.includes('init_secret')) {
+  console.log('::warning::Worker 未配置 init_secret —— /api/init 会返回 404，数据库迁移会被跳过。请到 Cloudflare Dashboard 添加（≥4 位，且与 jwt_secret 不同）。');
+}
+
 const missing = expected.filter((name) => !names.includes(name));
 if (missing.length > 0) {
   fail(

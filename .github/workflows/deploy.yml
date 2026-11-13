@@ -13,9 +13,11 @@ name: Deploy xi-mail
 #   secrets，管不到资源绑定；无 --keep-bindings 开关）。
 #   因此部署前用 Secrets 现场生成 wrangler.ci.toml，把 db/kv(/r2) 显式写进配置。
 #
-# 业务变量（domain/admin）与 jwt_secret 不在本 workflow：
+# 业务变量（domain/admin）与 jwt_secret / init_secret 不在本 workflow：
 #   在 Cloudflare Dashboard > Settings > Variables and Secrets 配置一次即可，
 #   keep_vars = true 会让每次部署自动保留它们（实测从未丢失）。
+#   jwt_secret  —— 登录签名密钥，≥32 位且字符多样
+#   init_secret —— 数据库初始化密钥，≥4 位，且必须与 jwt_secret 不同
 #
 # 与 Cloudflare Workers Builds（Dashboard 直连仓库）的关系：
 #   该通道默认执行 `npx wrangler deploy` 且找不到含绑定的配置 → 会清空绑定。
@@ -64,7 +66,7 @@ jobs:
       CUSTOM_DOMAIN: ${{ secrets.CUSTOM_DOMAIN }}
       R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
       D1_DATABASE_NAME: ${{ secrets.D1_DATABASE_NAME }}
-      # INIT_URL = https://<worker域名>/api/init/<jwt_secret>，配了则部署后自动迁移数据库
+      # INIT_URL = https://<worker域名>/api/init/<init_secret>，配了则部署后自动迁移数据库
       INIT_URL: ${{ secrets.INIT_URL }}
 
     steps:
@@ -132,7 +134,7 @@ jobs:
         run: |
           set -uo pipefail
           if [ -z "$INIT_URL" ]; then
-            echo "INIT_URL 未配置，跳过数据库初始化（手动访问 https://<worker域名>/api/init/<jwt_secret> 一次即可）"
+            echo "INIT_URL 未配置，跳过数据库初始化（手动访问 https://<worker域名>/api/init/<init_secret> 一次即可）"
             exit 0
           fi
           for i in 1 2 3 4 5; do
@@ -144,7 +146,7 @@ jobs:
             fi
             sleep 5
           done
-          echo "::error::/api/init 未返回 success —— 检查 INIT_URL 里的 jwt_secret 是否与 Worker 配置一致、db/kv 绑定是否生效"
+          echo "::error::/api/init 未返回 success —— 检查 INIT_URL 里的 init_secret 是否与 Worker 的 init_secret 一致（两者必须相同且 ≥4 位，且 jwt_secret/init_secret 不能相同）、db/kv 绑定是否生效"
           exit 1
 
       - name: Summary
