@@ -11,6 +11,7 @@ import app from '../hono/hono';
 
 const publicExact = [
 	'/translation/pack',
+	'/attachment/view',
 	'/mail-share/read',
 	'/mail-share/content',
 	'/mail-share/attachment',
@@ -20,7 +21,7 @@ const publicExact = [
 	'/webhooks',
 	'/public/genToken',
 ];
-const publicTrees = ['/oss/', '/init/', '/telegram/', '/oauth/', '/admin/'];
+const publicTrees = ['/attachment/sent/', '/init/', '/telegram/', '/oauth/', '/admin/'];
 
 const requirePerms = [
 	'/translation/config', '/translation/save', '/translation/generate', '/translation/catalog/refresh', '/translation/register',
@@ -49,6 +50,8 @@ const requirePerms = [
 	'/setting/deleteBackground',
 	'/setting/set',
 	'/setting/query',
+	'/setting/senderDomain/block',
+	'/setting/s3/test',
 	'/setting/globalToken',
 	'/user/delete',
 	'/user/setPwd',
@@ -96,7 +99,7 @@ const premKey = {
 	'all-email:query': ['/allEmail/list','/allEmail/latest','/allEmail/senderStatistics'],
 	'all-email:delete': ['/allEmail/delete','/allEmail/batchDelete'],
 	'setting:query': ['/setting/query', '/setting/globalToken', '/sub-worker/list', '/translation/config'],
-	'setting:set': ['/setting/set', '/setting/setBackground','/setting/deleteBackground', '/setting/globalToken/enabled', '/setting/globalToken/generate', '/sub-worker/', '/translation/save', '/translation/generate', '/translation/catalog/refresh', '/translation/register'],
+	'setting:set': ['/setting/set', '/setting/setBackground','/setting/deleteBackground', '/setting/senderDomain/block', '/setting/s3/test', '/setting/globalToken/enabled', '/setting/globalToken/generate', '/sub-worker/', '/translation/save', '/translation/generate', '/translation/catalog/refresh', '/translation/register'],
 	'analysis:query': ['/analysis/echarts'],
 	'reg-key:add': ['/regKey/add'],
 	'reg-key:query': ['/regKey/list','/regKey/history', '/role/selectUse'],
