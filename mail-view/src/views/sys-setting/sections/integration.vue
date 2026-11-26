@@ -87,8 +87,8 @@
             </el-tooltip>
           </div>
           <div class="r2domain">
-            <span>{{ setting.r2Domain || '' }}</span>
-            <el-button class="settings-action" @click="r2DomainShow = true">{{ $t('change') }}</el-button>
+            <span class="s3-config-status">{{ $t(setting.r2Domain ? 's3ConnectionConfigured' : 's3ConnectionNotConfigured') }}</span>
+            <el-button class="settings-action" @click="r2DomainShow = true">{{ $t('manage') }}</el-button>
           </div>
         </div>
         <div class="setting-item">
@@ -145,13 +145,12 @@
         <div class="setting-item">
           <div><span>{{ $t('signUpVerification') }}</span></div>
           <div>
-            <el-input-number v-if="setting.registerVerify === 2" v-model="regVerifyCount" :aria-label="$t('signUpVerification')" :min="1" style="width: 110px" @change="saveRegVerifyCount" />
+            <el-input-number v-if="setting.registerVerify === 2" v-model="regVerifyCount" :aria-label="$t('signUpVerification')" :min="1" class="settings-number-input" @change="saveRegVerifyCount" />
             <el-select popper-class="sys-setting-popper"
                 @change="change('registerVerify')"
-                :style="`width: ${ locale === 'en' ? 100 : 80 }px;`"
                 v-model="setting.registerVerify"
                 placeholder="Select"
-                class="bot-verify-select"
+                class="settings-compact-select"
             >
               <el-option :value="0" :label="$t('enable')"/>
               <el-option :value="1" :label="$t('disable')"/>
@@ -161,15 +160,30 @@
         </div>
         <p v-if="setting.registerVerify === 2" class="verify-rule-hint">{{ $t('rulesVerifyTitle', {count:regVerifyCount}) }}</p>
         <div class="setting-item">
+          <div><span>{{ $t('loginVerification') }}</span></div>
+          <div>
+            <el-input-number v-if="setting.loginVerify === 2" v-model="setting.loginVerifyCount"
+                             :aria-label="$t('loginVerifyThreshold')" :min="1" :max="7" :precision="0"
+                             :disabled="isSaving('loginVerifyCount')" class="settings-number-input" @change="saveLoginVerifyCount" />
+            <el-select popper-class="sys-setting-popper" v-model="setting.loginVerify"
+                       :aria-label="$t('loginVerification')"
+                       :disabled="isSaving('loginVerify')" @change="change('loginVerify')" class="settings-compact-select">
+              <el-option :value="0" :label="$t('enable')"/>
+              <el-option :value="1" :label="$t('disable')"/>
+              <el-option :value="2" :label="$t('rulesVerify')"/>
+            </el-select>
+          </div>
+        </div>
+        <p v-if="setting.loginVerify === 2" class="verify-rule-hint">{{ $t('loginVerifyRuleHint', {count:setting.loginVerifyCount}) }}</p>
+        <div class="setting-item">
           <div><span>{{ $t('addEmailVerification') }}</span></div>
           <div>
-            <el-input-number v-if="setting.addEmailVerify === 2" v-model="addVerifyCount" :aria-label="$t('addEmailVerification')" :min="1" style="width: 110px" @change="saveAddVerifyCount" />
+            <el-input-number v-if="setting.addEmailVerify === 2" v-model="addVerifyCount" :aria-label="$t('addEmailVerification')" :min="1" class="settings-number-input" @change="saveAddVerifyCount" />
             <el-select popper-class="sys-setting-popper"
                 @change="change('addEmailVerify')"
-                :style="`width: ${ locale === 'en' ? 100 : 80 }px;`"
                 v-model="setting.addEmailVerify"
                 placeholder="Select"
-                class="bot-verify-select"
+                class="settings-compact-select"
             >
               <el-option :value="0" :label="$t('enable')"/>
               <el-option :value="1" :label="$t('disable')"/>
@@ -218,7 +232,7 @@
     <el-dialog class="sys-setting-dialog ss-dialog-sm" v-model="r2DomainShow" :title="$t('addOsDomain')"
                @closed="r2DomainInput = setting.r2Domain">
       <form>
-        <el-input type="text" :placeholder="$t('domainDesc')" v-model="r2DomainInput"/>
+        <label class="r2-domain-field"><span>{{ $t('osDomain') }}</span><el-input type="text" :placeholder="$t('r2DomainPlaceholder')" v-model="r2DomainInput"/><small>{{ $t('r2DomainHelp') }}</small></label>
         <el-button type="primary" :loading="isSaving('r2Domain')" :disabled="isSaving('r2Domain')" @click="saveR2domain">{{ $t('save') }}</el-button>
       </form>
     </el-dialog>
@@ -283,22 +297,31 @@
         <el-input-tag tag-type="warning" :placeholder="$t('toBotTokenDesc')" v-model="tgChatId" @add-tag="addChatTag"/>
         <el-input tag-type="warning" :placeholder="$t('customDomainDesc')" v-model="customDomain"/>
         <div class="tg-msg-label">
-          <span>{{ $t('from') }}</span>
+          <span class="tg-option-label">{{ $t('from') }}</span>
           <el-select popper-class="sys-setting-popper" v-model="tgMsgFrom">
             <el-option v-for="item in tgMsgFromOption" :key="item.value" :label="item.label" :value="item.value"/>
           </el-select>
         </div>
         <div class="tg-msg-label">
-          <span>{{ $t('recipient') }}</span>
+          <span class="tg-option-label">{{ $t('recipient') }}</span>
           <el-select popper-class="sys-setting-popper" v-model="tgMsgTo">
             <el-option v-for="item in showHideOption" :key="item.value" :label="item.label" :value="item.value"/>
           </el-select>
         </div>
         <div class="tg-msg-label">
-          <span>{{ $t('emailText') }}</span>
+          <span class="tg-option-label">{{ $t('emailText') }}</span>
           <el-select popper-class="sys-setting-popper" v-model="tgMsgText">
             <el-option v-for="item in showHideOption" :key="item.value" :label="item.label" :value="item.value"/>
           </el-select>
+        </div>
+        <div class="tg-msg-label">
+          <span class="tg-option-label">
+            <span>{{ $t('tgMsgCode') }}</span>
+            <el-tooltip :content="$t('tgMsgCodeHint')">
+              <Icon class="warning tg-option-help" icon="mingcute:information-line" width="16" height="16"/>
+            </el-tooltip>
+          </span>
+          <el-switch v-model="tgMsgCode" :aria-label="$t('tgMsgCode')" :disabled="isSaving('tgBotToken')"/>
         </div>
       </div>
       <template #footer>
@@ -365,7 +388,7 @@ const sectionArea = computed(() => {
   if (props.settingsArea) return props.settingsArea
   const key = route.query.find
   if (['tgBot','otherEmail','forwardingRules'].includes(key)) return 'forward'
-  if (['signUpVerification','addEmailVerification'].includes(key)) return 'verify'
+  if (['signUpVerification','loginVerification','addEmailVerification'].includes(key)) return 'verify'
   if (['noticeTitle','noticePopup','popUp'].includes(key)) return 'notice'
   if (key === 'resendWebhookTitle') return 'webhook'
   if (['workersAi','aiModel','aiCodeEnable','s3Configuration','storageType'].includes(key)) return 'storage'
@@ -436,6 +459,7 @@ const tgBotToken = ref('')
 const tgMsgFrom = ref('')
 const tgMsgTo = ref('')
 const tgMsgText = ref('')
+const tgMsgCode = ref(true)
 const forwardEmail = ref([])
 const forwardStatus = ref(0)
 const ruleType = ref(0)
@@ -516,6 +540,7 @@ function openTgSetting() {
   customDomain.value = setting.value.customDomain
   tgMsgFrom.value = setting.value.tgMsgFrom
   tgMsgText.value = setting.value.tgMsgText
+  tgMsgCode.value = setting.value.tgMsgCode !== false
   tgMsgTo.value = setting.value.tgMsgTo
   tgChatId.value = setting.value.tgChatId ? setting.value.tgChatId.split(',') : []
   tgSettingShow.value = true
@@ -566,7 +591,18 @@ function addChatTag(val) {
 }
 
 function saveR2domain() {
-  editSetting({r2Domain: r2DomainInput.value}).then(ok => {
+  let domain = r2DomainInput.value.trim()
+  if (domain && !/^https:\/\//i.test(domain)) domain = `https://${domain}`
+  try {
+    const url = domain ? new URL(domain) : null
+    if (url && (url.protocol !== 'https:' || url.username || url.password || url.port || url.pathname !== '/' || url.search || url.hash || !url.hostname.includes('.') || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])?$/i.test(url.hostname))) throw new Error()
+    domain = url ? `https://${url.hostname.toLowerCase()}` : ''
+  } catch {
+    ElMessage.warning(t('r2DomainHttpsOnly'))
+    return
+  }
+  r2DomainInput.value = domain
+  editSetting({r2Domain: domain}).then(ok => {
     if (ok) r2DomainShow.value = false
   })
 }
@@ -637,6 +673,11 @@ function saveRegVerifyCount() {
   editSetting({regVerifyCount: regVerifyCount.value})
 }
 
+function saveLoginVerifyCount(value, previous) {
+  setting.value.loginVerifyCount = value ?? previous ?? 3
+  change('loginVerifyCount')
+}
+
 function saveAddVerifyCount() {
   addVerifyCount.value = addVerifyCount.value || 1
   editSetting({addVerifyCount: addVerifyCount.value})
@@ -650,6 +691,7 @@ function tgBotSave() {
     tgChatId: tgChatId.value + '',
     tgMsgFrom: tgMsgFrom.value,
     tgMsgText: tgMsgText.value,
+    tgMsgCode: tgMsgCode.value,
     tgMsgTo: tgMsgTo.value
   }).then(ok => {
     if (ok) tgSettingShow.value = false
@@ -719,6 +761,10 @@ function saveNoticePopup() {
   }
 }
 
+.r2-domain-field { display:grid; gap:7px; min-width:0; }
+.r2-domain-field > span { color:var(--el-text-color-regular); font-size:13px; }
+.r2-domain-field > small { color:var(--el-text-color-secondary); font-size:12px; line-height:1.5; }
+
 .bot-verify {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -739,10 +785,6 @@ function saveNoticePopup() {
     width: 48px;
     margin: 0 0 0 10px;
   }
-}
-
-.bot-verify-select {
-  margin-left: 10px;
 }
 
 .s3-button {
@@ -847,6 +889,25 @@ function saveNoticePopup() {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
+
+    .tg-option-label {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+      font-size: var(--settings-control-font-size, 14px);
+      line-height: 1.5;
+      color: var(--el-text-color-regular);
+
+      .tg-option-help {
+        flex: none;
+      }
+    }
+
+    .el-switch {
+      flex-shrink: 0;
+      align-self: center;
+    }
 
     .el-select {
       width: v-bind(tgMsgLabelWidth);

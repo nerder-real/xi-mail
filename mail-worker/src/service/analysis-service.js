@@ -29,6 +29,7 @@ const analysisService = {
 			numberCount,
 			nameRatio,
 			userDayCountRaw,
+			mailboxSuffixRanking,
 			receiveDayCountRaw,
 			sendDayCountRaw,
 			daySendTotalRaw
@@ -45,6 +46,7 @@ const analysisService = {
 
 
 			analysisDao.userDayCount(c, diffHours),
+			analysisDao.mailboxSuffixRanking(c),
 			analysisDao.receiveDayCount(c, diffHours),
 			analysisDao.sendDayCount(c, diffHours),
 
@@ -61,6 +63,7 @@ const analysisService = {
 		return {
 			numberCount,
 			userDayCount,
+			mailboxSuffixRanking,
 			receiveRatio: {
 				nameRatio
 			},

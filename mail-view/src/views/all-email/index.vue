@@ -16,6 +16,7 @@
                  @refresh-before="refreshBefore"
                  @right-search="rightSearch"
                  @block-sender-domain="blockMailSender"
+                 @block-selected-sender-domains="blockSelectedSenderDomains"
                  :type="'all-email'"
 
     >
@@ -137,7 +138,7 @@ import {sleep} from "@/utils/time-utils.js";
 import {useSettingStore} from "@/store/setting.js";
 import { useRoute } from 'vue-router'
 import SenderStatistics from '@/components/SenderStatistics.vue'
-import {blockSenderDomain} from '@/request/setting'
+import {blockSenderDomains as blockSenderDomainsRequest} from '@/request/setting'
 import {useSysSetting} from '@/views/sys-setting/use-sys-setting'
 
 defineOptions({
@@ -148,18 +149,46 @@ const route = useRoute()
 const {t} = useI18n();
 const emailStore = useEmailStore();
 const settingStore = useSettingStore();
+const sysSetting = useSysSetting();
 let blockingSender=false;
 async function blockMailSender(address){
+  const value=String(address||'').trim();
+  const domain=value.includes('@')?value.slice(value.lastIndexOf('@')+1).trim().toLowerCase():value.toLowerCase();
+  return blockSenderDomains([domain]);
+}
+function blockSelectedSenderDomains(domains){
+  return blockSenderDomains(domains);
+}
+async function blockSenderDomains(input){
   if(blockingSender)return;
-  const domain=String(address||'').slice(String(address||'').lastIndexOf('@')+1).trim().toLowerCase();
-  if(!domain)return;
+  const domains=[...new Set((Array.isArray(input)?input:[input]).map(value=>String(value||'').trim().toLowerCase()).filter(domain=>/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))+$/.test(domain)))];
+  if(!domains.length)return;
   blockingSender=true;
   try{
-    try{await ElMessageBox.confirm(t('blockSenderDomainConfirm',{domain}),t('blockSenderDomain'),{type:'warning',confirmButtonText:t('confirm'),cancelButtonText:t('cancel')});}catch{return}
-    const result=await blockSenderDomain(domain);
-    useSysSetting().applyExternalSettings({senderDomainBlacklist:result.senderDomainBlacklist,senderFilterMode:result.senderFilterMode});
-    ElMessage({message:t(result.alreadyBlocked?'senderDomainAlreadyBlocked':'senderDomainBlocked',{domain:result.domain}),type:'success',plain:true});
-  }catch{}finally{blockingSender=false;}
+    const confirmText=domains.length===1?t('blockSenderDomainConfirm',{domain:domains[0]}):t('blockSelectedSenderDomainsConfirm',{count:domains.length});
+    try{await ElMessageBox.confirm(confirmText,t('blockSenderDomain'),{type:'warning',confirmButtonText:t('confirm'),cancelButtonText:t('cancel')});}catch{return}
+    let failedCount=0;let succeeded=0;let newlyBlocked=0;let alreadyBlocked=0;let lastError;
+    for(let index=0;index<domains.length;index+=500){
+      const batch=domains.slice(index,index+500);
+      try{
+        const result=await blockSenderDomainsRequest(batch);
+        succeeded+=Number(result.domainCount)||batch.length;
+        newlyBlocked+=Number(result.addedCount)||0;
+        alreadyBlocked+=Number(result.alreadyBlockedCount)||0;
+        const current=sysSetting.setting.value.senderDomainBlacklist;
+        const currentList=Array.isArray(current)?current:(String(current||'').split(',').filter(Boolean));
+        sysSetting.applyExternalSettings({senderDomainBlacklist:[...new Set([...currentList,...(result.addedDomains||[])])],senderFilterMode:0});
+      }catch(error){failedCount+=batch.length;lastError=error;}
+    }
+    if(!failedCount){
+      const message=domains.length===1?t(alreadyBlocked?'senderDomainAlreadyBlocked':'senderDomainBlocked',{domain:domains[0]}):t('blockSelectedSenderDomainsDone',{count:succeeded,newlyBlocked,alreadyBlocked});
+      ElMessage({message,type:'success',plain:true});
+    }else if(succeeded){
+      ElMessage({message:t('blockSelectedSenderDomainsPartial',{success:succeeded,failed:failedCount}),type:'warning',plain:true});
+    }else{
+      ElMessage({message:lastError?.message||t('blockSelectedSenderDomainsFailed'),type:'error',plain:true});
+    }
+  }finally{blockingSender=false;}
 }
 const clearTime = ref('')
 const sysEmailScroll = ref({})
@@ -538,7 +567,16 @@ async function latest() {
 
   .header-tools { gap: 6px; }
 
-  .header-right { margin-left: auto; }
+  .header-right {
+    margin-left: auto;
+    flex: none;
+  }
+
+  .email-count {
+    min-inline-size: 6em;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
 
   .icon {
     flex-shrink: 0;
@@ -558,7 +596,7 @@ async function latest() {
     padding: 12px;
     > .el-checkbox { grid-row: 2; grid-column: 1; margin: 0; justify-content: center; }
     .header-left { display: contents; }
-    .header-tools { grid-row: 2; grid-column: 2; gap: 4px; }
+    .header-tools { grid-row: 2; grid-column: 2; gap: 4px; flex-wrap: wrap; }
     .header-right { grid-row: 2; grid-column: 3; margin-left: 0; }
     .email-count { font-size: 12px; }
     .desktop-mail-action { display: none; }
@@ -570,6 +608,16 @@ async function latest() {
   .mail-search-fields .status-select :deep(.el-select__wrapper) { height: 36px; min-height: 36px; }
   .mail-search-fields :deep(.el-input__wrapper), .mail-search-fields :deep(.el-select__wrapper) { min-height: 36px; height: 36px; }
   .mail-tool-button { min-width: 36px; min-height: 36px; }
+}
+
+@media (max-width: 360px) {
+  :deep(.admin-mail-toolbar) {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 8px 2px;
+    padding-inline: 8px;
+
+    .header-tools { gap: 2px; }
+  }
 }
 
 .search-input {

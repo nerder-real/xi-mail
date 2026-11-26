@@ -22,19 +22,33 @@
         <el-tooltip v-if="getSelectedMailsIds().length > 0 && showUnread && hasPerm('email:delete')" :content="$t('markAsRead')" placement="top" :trigger-keys="[]">
           <button type="button" class="xi-icon-button selection-action" :aria-label="$t('markAsRead')" @click="handleRead"><Icon icon="mingcute:mail-open-line" width="18" height="18" /></button>
         </el-tooltip>
+        <el-tooltip v-if="selectedSenderDomains.length && hasPerm('setting:set')" :content="$t('blockSelectedSenderDomainsAction',{count:selectedSenderDomains.length})" placement="top" :trigger-keys="[]">
+          <button type="button" class="xi-icon-button selection-action" :aria-label="$t('blockSelectedSenderDomainsAction',{count:selectedSenderDomains.length})" @click="emit('block-selected-sender-domains', selectedSenderDomains)"><Icon icon="mingcute:shield-line" width="18" height="18" /></button>
+        </el-tooltip>
+        <el-tooltip v-if="props.type === 'all-email' && selectedSenderAddresses.length" :content="$t('copySelectedSenders',{count:selectedSenderAddresses.length})" placement="top" :trigger-keys="[]">
+          <button type="button" class="xi-icon-button selection-action" :aria-label="$t('copySelectedSenders',{count:selectedSenderAddresses.length})" @click="copyAddressList(selectedSenderAddresses)"><Icon icon="mingcute:copy-2-line" width="18" height="18" /></button>
+        </el-tooltip>
+        <el-tooltip v-if="props.type === 'all-email' && selectedRecipientAddresses.length" :content="$t('copySelectedRecipients',{count:selectedRecipientAddresses.length})" placement="top" :trigger-keys="[]">
+          <button type="button" class="xi-icon-button selection-action" :aria-label="$t('copySelectedRecipients',{count:selectedRecipientAddresses.length})" @click="copyAddressList(selectedRecipientAddresses)"><Icon icon="mingcute:inbox-line" width="18" height="18" /></button>
+        </el-tooltip>
         <el-dropdown v-if="props.type === 'all-email'" class="mail-overflow" trigger="click" placement="bottom-end">
           <button type="button" class="xi-icon-button" :aria-label="$t('moreNavigation')"><Icon icon="mingcute:more-1-line" width="18" height="18" /></button>
           <template #dropdown><el-dropdown-menu>
             <slot name="more-actions"></slot>
             <el-dropdown-item v-if="getSelectedMailsIds().length > 0 && hasPerm('email:delete')" @click="handleDelete"><Icon icon="mingcute:delete-2-line" width="18" height="18" />{{ $t('delete') }}</el-dropdown-item>
             <el-dropdown-item v-if="getSelectedMailsIds().length > 0 && showUnread && hasPerm('email:delete')" @click="handleRead"><Icon icon="mingcute:mail-open-line" width="18" height="18" />{{ $t('markAsRead') }}</el-dropdown-item>
+            <el-dropdown-item v-if="selectedSenderDomains.length && hasPerm('setting:set')" @click="emit('block-selected-sender-domains', selectedSenderDomains)"><Icon icon="mingcute:shield-line" width="18" height="18" />{{ $t('blockSelectedSenderDomainsAction',{count:selectedSenderDomains.length}) }}</el-dropdown-item>
+            <el-dropdown-item v-if="selectedSenderAddresses.length" @click="copyAddressList(selectedSenderAddresses)"><Icon icon="mingcute:copy-2-line" width="18" height="18" />{{ $t('copySelectedSenders',{count:selectedSenderAddresses.length}) }}</el-dropdown-item>
+            <el-dropdown-item v-if="selectedRecipientAddresses.length" @click="copyAddressList(selectedRecipientAddresses)"><Icon icon="mingcute:inbox-line" width="18" height="18" />{{ $t('copySelectedRecipients',{count:selectedRecipientAddresses.length}) }}</el-dropdown-item>
           </el-dropdown-menu></template>
         </el-dropdown>
         </div>
       </div>
 
       <div class="header-right">
-        <span class="email-count" v-if="total">{{ $t('emailCount', {total: total}) }}</span>
+        <span v-if="props.type === 'all-email' || total" class="email-count" role="status">
+          {{ $t('emailCount', {total: total ?? '—'}) }}
+        </span>
         <el-tooltip v-if="canToggleAccount" :content="accountShow ? $t('hideAccountList') : $t('showAccountList')" placement="bottom">
           <Icon class="icon" width="18" height="18"
                 :icon="accountShow ? 'mingcute:layout-leftbar-close-line' : 'mingcute:layout-leftbar-open-line'"
@@ -53,10 +67,12 @@
                         v-if="!loading && emailList.length > 0"
                         :key="keyCount"
         >
-          <template #default="{ data: item, index }" >
-            <div :class="'email-row ' + props.type"
+      <template #default="{ data: item, index }" >
+            <div :class="['email-row', props.type, {'is-drag-selecting': dragSelection.active}]"
                  :data-checked="item.checked"
-                 @click="jumpDetails(item)"
+                 :data-email-id="item.emailId"
+                 @click="handleRowClick($event,item)"
+                 @pointerdown="beginDragSelection($event,item)"
                  v-if="!item.expand"
                  :key="item.emailId"
                  @contextmenu="handleContextmenu($event, item)"
@@ -86,7 +102,7 @@
                   <span class="name">
                     <span>
                       <div class="unread" v-if="isMobile && (item.unread === EmailUnreadEnum.UNREAD && showUnread) "/>
-                      <span class="sender-display-name" :title="item.sendEmail"><slot name="name" :email="item"> {{ senderLabel(item) }}</slot></span>
+                      <span class="sender-display-name" :title="[senderLabel(item), item.sendEmail].filter(Boolean).join(' · ')"><slot name="name" :email="item"> {{ senderLabel(item) }}</slot></span>
                     </span>
                     <span>
                       <Icon v-if="item.isStar" icon="fluent-color:star-16" width="18" height="18"/>
@@ -111,16 +127,26 @@
                   </div>
                   <div class="user-info" v-if="showUserInfo">
                     <div class="user">
-                      <span>
+                      <span class="address-kind">
                         <Icon icon="mingcute:send-line" width="16" height="16"/>
                       </span>
-                      <span>{{ item.sendEmail }}</span>
+                      <span class="address-text" :title="item.sendEmail">{{ item.sendEmail }}</span>
+                      <el-tooltip v-if="props.type === 'all-email'" :content="$t('copySenderAddress')" placement="top" :trigger-keys="[]">
+                        <button type="button" class="copy-address xi-icon-button" :aria-label="$t('copySenderAddress') + ' ' + item.sendEmail" @pointerdown.stop @click.stop="copyAddressList([item.sendEmail])">
+                          <Icon icon="mingcute:copy-2-line" width="14" height="14" />
+                        </button>
+                      </el-tooltip>
                     </div>
                     <div class="account">
-                      <span>
+                      <span class="address-kind">
                         <Icon icon="mingcute:inbox-line" width="16" height="16"/>
                       </span>
-                      <span>{{ item.toEmail }}</span>
+                      <span class="address-text" :title="item.toEmail">{{ item.toEmail }}</span>
+                      <el-tooltip v-if="props.type === 'all-email'" :content="$t('copyRecipientAddress')" placement="top" :trigger-keys="[]">
+                        <button type="button" class="copy-address xi-icon-button" :aria-label="$t('copyRecipientAddress') + ' ' + item.toEmail" @pointerdown.stop @click.stop="copyAddressList([item.toEmail])">
+                          <Icon icon="mingcute:copy-2-line" width="14" height="14" />
+                        </button>
+                      </el-tooltip>
                     </div>
                   </div>
                 </div>
@@ -234,6 +260,7 @@
           </el-dropdown-item>
           <el-dropdown-item v-if="props.type === 'all-email' && rightClickEmail.sendEmail" @click="handleSearch('sendEmail',rightClickEmail.sendEmail)"><div class="right-dropdown-item"><Icon icon="mingcute:search-line" width="18" height="18"/><span>{{t('searchSenderAddress')}}</span></div></el-dropdown-item>
           <el-dropdown-item v-if="props.type === 'all-email' && rightClickEmail.sendEmail" @click="copySenderAddress"><div class="right-dropdown-item"><Icon icon="mingcute:copy-line" width="18" height="18"/><span>{{t('copySenderAddress')}}</span></div></el-dropdown-item>
+          <el-dropdown-item v-if="props.type === 'all-email' && rightClickEmail.toEmail" @click="copyRecipientAddress"><div class="right-dropdown-item"><Icon icon="mingcute:copy-line" width="18" height="18"/><span>{{t('copyRecipientAddress')}}</span></div></el-dropdown-item>
           <el-dropdown-item v-if="hasPerm(props.type === 'all-email' ? 'all-email:delete' : 'email:delete')" @click="rightDelete(rightClickEmail.emailId)">
             <template #default>
               <div class="right-dropdown-item">
@@ -316,7 +343,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['jump', 'refresh-before', 'delete-draft', 'right-search','block-sender-domain'])
+const emit = defineEmits(['jump', 'refresh-before', 'delete-draft', 'right-search','block-sender-domain','block-selected-sender-domains'])
 const {t} = useI18n()
 const settingStore = useSettingStore()
 const uiStore = useUiStore();
@@ -326,7 +353,7 @@ const followLoading = ref(false);
 const noLoading = ref(false);
 const emailList = reactive([])
 const expandList = reactive([])
-const total = ref(0);
+const total = ref(props.type === 'all-email' ? null : 0);
 const checkAll = ref(false);
 const isIndeterminate = ref(false);
 const scroll = ref(null)
@@ -346,6 +373,18 @@ const dropdownCloseLock = ref(false);
 const dropdownShow = ref(false);
 const rightClickEmail = ref({});
 const checkedEmailCount = ref(0);
+const selectedSenderDomains = computed(() => {
+  if (props.type !== 'all-email') return [];
+  return [...new Set(emailList
+    .filter(item => item.checked && Number(item.type) === 0 && typeof item.sendEmail === 'string' && /^[^@\s]+@[^@\s]+$/.test(item.sendEmail))
+    .map(item => item.sendEmail.trim().slice(item.sendEmail.lastIndexOf('@') + 1).toLowerCase())
+    .filter(Boolean))];
+});
+const selectedSenderAddresses = computed(() => [...new Set(emailList.filter(item=>item.checked&&item.sendEmail).map(item=>String(item.sendEmail).trim()).filter(Boolean))]);
+const selectedRecipientAddresses = computed(() => [...new Set(emailList.filter(item=>item.checked&&item.toEmail).map(item=>String(item.toEmail).trim()).filter(Boolean))]);
+const dragSelection = reactive({active:false});
+let dragCandidate = null;
+let suppressRowClickUntil = 0;
 let timer = null
 const position = ref(
     DOMRect.fromRect({
@@ -394,7 +433,53 @@ onMounted(() => {
 onUnmounted(() => {
   disposed = true
   clearInterval(timer)
+  stopDragSelection()
 })
+
+onMounted(() => {
+  document.addEventListener('pointermove', handleDragPointerMove, {passive:false});
+  document.addEventListener('pointerup', stopDragSelection);
+  document.addEventListener('pointercancel', stopDragSelection);
+  window.addEventListener('blur', stopDragSelection);
+})
+
+function beginDragSelection(event,item) {
+  if (props.type !== 'all-email' || event.pointerType !== 'mouse' || event.button !== 0 || !item || item.expand) return;
+  if (event.target.closest('button,a,input,textarea,select,.el-checkbox,.pc-star,.code-chip,[role="button"]')) return;
+  dragCandidate = {id:item.emailId, checked:!!item.checked, x:event.clientX, y:event.clientY, pointerId:event.pointerId};
+}
+
+function handleDragPointerMove(event) {
+  if (!dragCandidate || event.pointerId !== dragCandidate.pointerId) return;
+  if (!dragSelection.active) {
+    if (Math.hypot(event.clientX-dragCandidate.x,event.clientY-dragCandidate.y) < 5) return;
+    dragSelection.active = true;
+    setDragSelected(dragCandidate.id,!dragCandidate.checked);
+  }
+  event.preventDefault();
+  const row = document.elementFromPoint(event.clientX,event.clientY)?.closest('.email-row.all-email[data-email-id]');
+  if (row) setDragSelected(Number(row.dataset.emailId),!dragCandidate.checked);
+}
+
+function setDragSelected(emailId,checked) {
+  const item = emailList.find(email => Number(email.emailId) === Number(emailId));
+  if (item) item.checked = checked;
+}
+
+function stopDragSelection() {
+  if (dragSelection.active) suppressRowClickUntil = Date.now()+300;
+  dragSelection.active = false;
+  dragCandidate = null;
+}
+
+function handleRowClick(event,item) {
+  if (Date.now() < suppressRowClickUntil) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  jumpDetails(item);
+}
 
 getEmailList()
 
@@ -694,7 +779,15 @@ function handleSearch(type, value) {
   emit('right-search', type, value);
 }
 async function copySenderAddress(){
-  try{await navigator.clipboard.writeText(rightClickEmail.value.sendEmail);ElMessage({message:t('copySuccessMsg'),type:'success',plain:true});}
+  await copyAddressList([rightClickEmail.value.sendEmail]);
+}
+async function copyRecipientAddress(){
+  await copyAddressList([rightClickEmail.value.toEmail]);
+}
+async function copyAddressList(addresses){
+  const values=[...new Set((addresses||[]).map(value=>String(value||'').trim()).filter(Boolean))];
+  if(!values.length)return;
+  try{await navigator.clipboard.writeText(values.join('\n'));ElMessage({message:t('copySuccessMsg'),type:'success',plain:true});}
   catch{ElMessage({message:t('copyFailMsg'),type:'error',plain:true});}
 }
 
@@ -724,6 +817,7 @@ function handleDelete() {
 }
 
 function deleteEmail(emailIds) {
+  const previousLength = emailList.length;
   emailIds.forEach(emailId => {
     emailList.forEach((item, index) => {
       if (emailId === item.emailId) {
@@ -731,6 +825,14 @@ function deleteEmail(emailIds) {
       }
     })
   })
+  const removed = previousLength - emailList.length;
+  if (props.type === 'all-email' && removed) {
+    if (total.value !== null) total.value = Math.max(0, total.value - removed);
+    if (!emailList.length || reqLock) {
+      refreshList();
+      return;
+    }
+  }
   if (emailList.length < queryParam.size && !noLoading.value) {
     getEmailList()
   }
@@ -757,7 +859,7 @@ function addItem(email) {
       latestEmail.value = email
     }
 
-    total.value++
+    if (total.value !== null) total.value++
     return true;
   }
 
@@ -778,7 +880,7 @@ function addItem(email) {
     latestEmail.value = email
   }
 
-  total.value++
+  if (total.value !== null) total.value++
   return true;
 }
 
@@ -891,7 +993,7 @@ function handleList(list) {
       8: { icon: 'mingcute:close-circle-fill', color: '#F56C6C', content: t('bounced') },
       4: { icon: 'mingcute:warning-fill',      color: '#FBBD08', content: t('complained') },
       5: { icon: 'mingcute:time-fill',         color: '#FBBD08', content: t('delayed') },
-      7: { icon: 'mingcute:question-fill',     color: '#FBBD08', content: t('noRecipient') },
+      7: { icon: 'mingcute:user-x-line',       color: 'var(--el-color-warning)', content: t('noRecipient') },
     };
 
     if (email.isDel) {
@@ -914,6 +1016,7 @@ function refresh() {
 function refreshList() {
   checkAll.value = false;
   isIndeterminate.value = false;
+  if (props.type === 'all-email') total.value = null;
   getEmailList(true);
 }
 
@@ -1025,6 +1128,10 @@ function loadData() {
     min-height: 68px;
     padding: 10px 0;
     align-items: flex-start;
+    &.is-drag-selecting {
+      user-select: none;
+      cursor: crosshair;
+    }
 
     .email-sender {
       align-self: start;
@@ -1088,16 +1195,25 @@ function loadData() {
         flex: none;
       }
 
-      span:first-child {
+      .address-kind {
         flex-shrink: 0;
         display: flex;
         align-items: center;
       }
 
-      span:last-child {
+      .address-text {
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .copy-address {
+        flex-shrink: 0;
+        width: 24px;
+        height: 24px;
+        color: var(--el-text-color-secondary);
+        @media (pointer: coarse) { width: 32px; height: 32px; }
       }
     }
   }
